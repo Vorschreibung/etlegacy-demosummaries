@@ -13,7 +13,7 @@ import (
 )
 
 type parserOptions struct {
-	multiKillsOnly bool
+	multiKillMin int
 }
 
 type killOutput struct {
@@ -754,7 +754,7 @@ func (p *parser) emitKill(serverTime int, state *entityState) {
 	if !ok {
 		return
 	}
-	if p.options.multiKillsOnly && relation == "Self" {
+	if p.options.multiKillMin > 0 && relation == "Self" {
 		return
 	}
 
@@ -789,7 +789,7 @@ func (p *parser) killRelation(attacker, target int) (string, bool) {
 }
 
 func (p *parser) writeKill(attacker int, output killOutput) {
-	if !p.options.multiKillsOnly {
+	if p.options.multiKillMin == 0 {
 		fmt.Fprintln(p.out, output.line)
 		return
 	}
@@ -885,7 +885,7 @@ func (p *parser) flushAllMultiKillWindows() {
 }
 
 func (p *parser) emitMultiKillWindow(window multiKillWindow) {
-	if len(window.outputs) < 2 {
+	if len(window.outputs) < p.options.multiKillMin {
 		return
 	}
 

@@ -1,36 +1,57 @@
 package main
 
 import (
-	"flag"
 	"fmt"
+	"io"
 	"os"
+
+	"github.com/spf13/cobra"
 )
 
 func main() {
-	multiKillsOnly := flag.Bool("multikills-only", false,
-		"only print kills that are part of a same-killer chain with at most 3 seconds between kills")
+	command := newRootCommand(os.Stdout, os.Stderr, runParser)
+	if err := command.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
 
-	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(),
-			"Usage: %s [--multikills-only] <demo.dm_84> [more demos...]\n",
-			os.Args[0],
-		)
+func newRootCommand(stdout io.Writer, stderr io.Writer,
+	run func(io.Writer, parserOptions, []string) error) *cobra.Command {
+	options := parserOptions{}
+
+	command := &cobra.Command{
+		Use:          "demoparser <demo.dm_84> [more demos...]",
+		Short:        "Parse ET .dm_84 demos and print kill lines",
+		SilenceUsage: true,
+		Args:         cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if options.multiKillMin != 0 && options.multiKillMin < 2 {
+				return fmt.Errorf("--multikills-only must be at least 2 when set")
+			}
+
+			return run(stdout, options, args)
+		},
 	}
 
-	flag.Parse()
-	if flag.NArg() == 0 {
-		flag.Usage()
-		os.Exit(2)
-	}
+	command.SetOut(stdout)
+	command.SetErr(stderr)
 
-	parser := newParser(os.Stdout, parserOptions{
-		multiKillsOnly: *multiKillsOnly,
-	})
-	for _, path := range flag.Args() {
+	flags := command.Flags()
+	flags.IntVar(&options.multiKillMin, "multikills-only", 0,
+		"only print multikill windows; when used without a value, require at least 2 kills per window")
+	flags.Lookup("multikills-only").NoOptDefVal = "2"
+
+	return command
+}
+
+func runParser(out io.Writer, options parserOptions, paths []string) error {
+	for _, path := range paths {
+		parser := newParser(out, options)
 		if err := parser.parseFile(path); err != nil {
-			fmt.Fprintf(os.Stderr, "%s: %v\n", path, err)
-			os.Exit(1)
+			return fmt.Errorf("%s: %w", path, err)
 		}
-		parser.resetState()
 	}
+
+	return nil
 }
