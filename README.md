@@ -1,6 +1,6 @@
 # etlegacy-demosummaries
 
-1. Download latest binary from [Releases](https://github.com/Vorschreibung/etlegacy-demosummaries/releases).
+1. Download latest binary from [Releases](https://github.com/Vorschreibung/etlegacy-demosummaries/releases/latest).
 2. Put it in some directory where you want the output log files to be, open a
    Terminal and run the binary with `-h` to see all the options.
 
