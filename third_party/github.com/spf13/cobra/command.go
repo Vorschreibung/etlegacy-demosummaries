@@ -29,8 +29,8 @@ type Command struct {
 type Flag struct {
 	Name        string
 	Usage       string
-	Value       *int
-	Default     int
+	IntValue    *int
+	StringValue *string
 	NoOptDefVal string
 }
 
@@ -145,7 +145,14 @@ func (c *Command) UsageString() string {
 		for _, flag := range c.flags.order {
 			builder.WriteString("      --")
 			builder.WriteString(flag.Name)
-			builder.WriteString("[=int]")
+			switch {
+			case flag.IntValue != nil && flag.NoOptDefVal != "":
+				builder.WriteString("[=int]")
+			case flag.IntValue != nil:
+				builder.WriteString(" int")
+			case flag.StringValue != nil:
+				builder.WriteString(" string")
+			}
 			padding := 24 - len(flag.Name)
 			if padding < 2 {
 				padding = 2
@@ -177,10 +184,24 @@ func (f *FlagSet) IntVar(target *int, name string, value int, usage string) {
 	*target = value
 
 	flag := &Flag{
-		Name:    name,
-		Usage:   usage,
-		Value:   target,
-		Default: value,
+		Name:     name,
+		Usage:    usage,
+		IntValue: target,
+	}
+
+	f.order = append(f.order, flag)
+	f.byName[name] = flag
+}
+
+// StringVar registers a string flag.
+func (f *FlagSet) StringVar(target *string, name string, value string, usage string) {
+	f.ensure()
+	*target = value
+
+	flag := &Flag{
+		Name:        name,
+		Usage:       usage,
+		StringValue: target,
 	}
 
 	f.order = append(f.order, flag)
@@ -223,23 +244,32 @@ func (f *FlagSet) parse(args []string) ([]string, bool, error) {
 			}
 
 			if !hasValue {
-				nextValue, consumed := f.optionalIntValue(args, i+1)
-				switch {
-				case consumed:
+				nextValue, consumed, err := f.nextValue(flag, args, i+1)
+				if err != nil {
+					return nil, false, err
+				}
+				if consumed {
 					value = nextValue
 					i++
-				case flag.NoOptDefVal != "":
+				} else if flag.NoOptDefVal != "" {
 					value = flag.NoOptDefVal
-				default:
+				} else {
 					return nil, false, fmt.Errorf("flag needs an argument: --%s", name)
 				}
 			}
 
-			parsed, err := strconv.Atoi(value)
-			if err != nil {
-				return nil, false, fmt.Errorf("invalid argument %q for --%s: %w", value, name, err)
+			switch {
+			case flag.IntValue != nil:
+				parsed, err := strconv.Atoi(value)
+				if err != nil {
+					return nil, false, fmt.Errorf("invalid argument %q for --%s: %w", value, name, err)
+				}
+				*flag.IntValue = parsed
+			case flag.StringValue != nil:
+				*flag.StringValue = value
+			default:
+				return nil, false, fmt.Errorf("unsupported flag type for --%s", name)
 			}
-			*flag.Value = parsed
 		default:
 			return nil, false, fmt.Errorf("unknown shorthand flag: %s", arg)
 		}
@@ -258,4 +288,15 @@ func (f *FlagSet) optionalIntValue(args []string, index int) (string, bool) {
 		return "", false
 	}
 	return args[index], true
+}
+
+func (f *FlagSet) nextValue(flag *Flag, args []string, index int) (string, bool, error) {
+	if flag.IntValue != nil && flag.NoOptDefVal != "" {
+		value, ok := f.optionalIntValue(args, index)
+		return value, ok, nil
+	}
+	if index >= len(args) {
+		return "", false, nil
+	}
+	return args[index], true, nil
 }

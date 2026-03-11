@@ -69,3 +69,24 @@ func TestRootCommandRejectsTooSmallMultiKillMinimum(t *testing.T) {
 		t.Fatal("expected validation error for --multikills-only=1")
 	}
 }
+
+func TestRootCommandKillsOnlyFrom(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	var gotOptions parserOptions
+
+	command := newRootCommand(&stdout, &stderr,
+		func(_ io.Writer, options parserOptions, _ []string) error {
+			gotOptions = options
+			return nil
+		})
+	command.SetArgs([]string{"--kills-only-from", "^1Killer", "demo.dm_84"})
+
+	if err := command.Execute(); err != nil {
+		t.Fatalf("execute failed: %v", err)
+	}
+	if gotOptions.killsOnlyFrom != "Killer" {
+		t.Fatalf("expected cleaned attacker filter, got %q", gotOptions.killsOnlyFrom)
+	}
+}

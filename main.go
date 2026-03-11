@@ -29,6 +29,12 @@ func newRootCommand(stdout io.Writer, stderr io.Writer,
 			if options.multiKillMin != 0 && options.multiKillMin < 2 {
 				return fmt.Errorf("--multikills-only must be at least 2 when set")
 			}
+			if options.killsOnlyFrom != "" {
+				options.killsOnlyFrom = cleanName(options.killsOnlyFrom)
+				if options.killsOnlyFrom == "" {
+					return fmt.Errorf("--kills-only-from must not be empty")
+				}
+			}
 
 			return run(stdout, options, args)
 		},
@@ -41,6 +47,8 @@ func newRootCommand(stdout io.Writer, stderr io.Writer,
 	flags.IntVar(&options.multiKillMin, "multikills-only", 0,
 		"only print multikill windows; when used without a value, require at least 2 kills per window")
 	flags.Lookup("multikills-only").NoOptDefVal = "2"
+	flags.StringVar(&options.killsOnlyFrom, "kills-only-from", "",
+		"only print kills from the given cleaned player name")
 
 	return command
 }

@@ -158,3 +158,30 @@ func TestEmitKillSelfMultiKillClassification(t *testing.T) {
 		t.Fatalf("unexpected self-kill output: %q", got)
 	}
 }
+
+func TestEmitKillFiltersByAttackerName(t *testing.T) {
+	var out bytes.Buffer
+
+	parser := newParser(&out, parserOptions{killsOnlyFrom: "Killer"})
+	parser.players[1] = playerInfo{Name: "Killer", Team: teamAxis}
+	parser.players[2] = playerInfo{Name: "VictimA", Team: teamAllies}
+	parser.players[3] = playerInfo{Name: "Other", Team: teamAxis}
+	parser.players[4] = playerInfo{Name: "VictimB", Team: teamAllies}
+
+	parser.emitKill(1000, &entityState{
+		Fields: [entityFieldCount]int32{
+			fieldOtherEntityNum:  2,
+			fieldOtherEntityNum2: 1,
+		},
+	})
+	parser.emitKill(2000, &entityState{
+		Fields: [entityFieldCount]int32{
+			fieldOtherEntityNum:  4,
+			fieldOtherEntityNum2: 3,
+		},
+	})
+
+	if got := strings.TrimSpace(out.String()); got != "00:01.00 ; Killer ; VictimA ; Enemy" {
+		t.Fatalf("unexpected filtered output: %q", got)
+	}
+}

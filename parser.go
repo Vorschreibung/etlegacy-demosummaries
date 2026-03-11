@@ -13,7 +13,8 @@ import (
 )
 
 type parserOptions struct {
-	multiKillMin int
+	multiKillMin  int
+	killsOnlyFrom string
 }
 
 type killOutput struct {
@@ -749,6 +750,9 @@ func (p *parser) emitKill(serverTime int, state *entityState) {
 	if attacker == entityNumWorld || attacker < 0 || attacker >= maxClients {
 		return
 	}
+	if p.options.multiKillMin > 0 {
+		p.flushExpiredMultiKillWindows(serverTime)
+	}
 
 	relation, ok := p.killRelation(attacker, target)
 	if !ok {
@@ -758,11 +762,16 @@ func (p *parser) emitKill(serverTime int, state *entityState) {
 		return
 	}
 
+	attackerName := p.playerName(attacker)
+	if p.options.killsOnlyFrom != "" && attackerName != p.options.killsOnlyFrom {
+		return
+	}
+
 	p.writeKill(attacker, killOutput{
 		serverTime: serverTime,
 		line: fmt.Sprintf("%s ; %s ; %s ; %s",
 			timestamp,
-			p.playerName(attacker),
+			attackerName,
 			p.playerName(target),
 			relation,
 		),
@@ -793,8 +802,6 @@ func (p *parser) writeKill(attacker int, output killOutput) {
 		fmt.Fprintln(p.out, output.line)
 		return
 	}
-
-	p.flushExpiredMultiKillWindows(output.serverTime)
 
 	window := p.pendingKills[attacker]
 	if len(window.outputs) == 0 {
