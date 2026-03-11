@@ -27,6 +27,16 @@ func TestEmitKillMultiKillWindowsSeparated(t *testing.T) {
 		t.Fatalf("unexpected output after first kill: %q", out.String())
 	}
 
+	parser.emitKill(3000, &entityState{
+		Fields: [entityFieldCount]int32{
+			fieldOtherEntityNum:  1,
+			fieldOtherEntityNum2: 1,
+		},
+	})
+	if out.Len() != 0 {
+		t.Fatalf("unexpected output after self-kill in multikill mode: %q", out.String())
+	}
+
 	parser.emitKill(4800, &entityState{
 		Fields: [entityFieldCount]int32{
 			fieldOtherEntityNum:  3,

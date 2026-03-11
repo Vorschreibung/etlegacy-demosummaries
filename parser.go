@@ -74,6 +74,7 @@ func (p *parser) resetState() {
 	p.snapshots = [packetBackup]snapshotState{}
 	p.activeTempEntities = make(map[int]struct{})
 	p.pendingKills = make(map[int]multiKillWindow)
+	p.printedMultiKillWindow = false
 }
 
 func (p *parser) parseFile(path string) error {
@@ -751,6 +752,9 @@ func (p *parser) emitKill(serverTime int, state *entityState) {
 
 	relation, ok := p.killRelation(attacker, target)
 	if !ok {
+		return
+	}
+	if p.options.multiKillsOnly && relation == "Self" {
 		return
 	}
 
