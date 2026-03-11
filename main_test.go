@@ -20,7 +20,7 @@ func TestRootCommandMultiKillsOnlyDefaultValue(t *testing.T) {
 			gotArgs = append([]string(nil), args...)
 			return nil
 		})
-	command.SetArgs([]string{"--multikills-only", "demo.dm_84"})
+	command.SetArgs(normalizeOptionalIntFlags([]string{"--multikills-only", "demo.dm_84"}))
 
 	if err := command.Execute(); err != nil {
 		t.Fatalf("execute failed: %v", err)
@@ -44,7 +44,7 @@ func TestRootCommandMultiKillsOnlyExplicitValue(t *testing.T) {
 			gotOptions = options
 			return nil
 		})
-	command.SetArgs([]string{"--multikills-only", "3", "demo.dm_84"})
+	command.SetArgs(normalizeOptionalIntFlags([]string{"--multikills-only", "3", "demo.dm_84"}))
 
 	if err := command.Execute(); err != nil {
 		t.Fatalf("execute failed: %v", err)
@@ -63,7 +63,7 @@ func TestRootCommandRejectsTooSmallMultiKillMinimum(t *testing.T) {
 			t.Fatal("run callback should not be called")
 			return nil
 		})
-	command.SetArgs([]string{"--multikills-only=1", "demo.dm_84"})
+	command.SetArgs(normalizeOptionalIntFlags([]string{"--multikills-only=1", "demo.dm_84"}))
 
 	if err := command.Execute(); err == nil {
 		t.Fatal("expected validation error for --multikills-only=1")
@@ -81,7 +81,7 @@ func TestRootCommandMultiKillHeadshotsOnlyDefaultValue(t *testing.T) {
 			gotOptions = options
 			return nil
 		})
-	command.SetArgs([]string{"--multikill-headshots-only", "demo.dm_84"})
+	command.SetArgs(normalizeOptionalIntFlags([]string{"--multikill-headshots-only", "demo.dm_84"}))
 
 	if err := command.Execute(); err != nil {
 		t.Fatalf("execute failed: %v", err)
@@ -100,7 +100,7 @@ func TestRootCommandRejectsConflictingMultiKillModes(t *testing.T) {
 			t.Fatal("run callback should not be called")
 			return nil
 		})
-	command.SetArgs([]string{"--multikills-only", "--multikill-headshots-only", "demo.dm_84"})
+	command.SetArgs(normalizeOptionalIntFlags([]string{"--multikills-only", "--multikill-headshots-only", "demo.dm_84"}))
 
 	if err := command.Execute(); err == nil {
 		t.Fatal("expected validation error for conflicting multikill modes")
@@ -118,7 +118,7 @@ func TestRootCommandKillsOnlyFrom(t *testing.T) {
 			gotOptions = options
 			return nil
 		})
-	command.SetArgs([]string{"--kills-only-from", "^1Killer", "demo.dm_84"})
+	command.SetArgs(normalizeOptionalIntFlags([]string{"--kills-only-from", "^1Killer", "demo.dm_84"}))
 
 	if err := command.Execute(); err != nil {
 		t.Fatalf("execute failed: %v", err)

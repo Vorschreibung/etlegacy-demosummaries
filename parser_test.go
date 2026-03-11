@@ -2,6 +2,9 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -227,5 +230,28 @@ func TestEmitKillMultiKillHeadshotsOnly(t *testing.T) {
 	}
 	if lines[1] != "00:03.80 ; Killer ; VictimC ; Enemy" {
 		t.Fatalf("unexpected second headshot line: %q", lines[1])
+	}
+}
+
+func TestParseFileIgnoresTruncatedTailPacket(t *testing.T) {
+	var out bytes.Buffer
+	parser := newParser(&out, parserOptions{})
+
+	path := filepath.Join(t.TempDir(), "truncated.dm_84")
+
+	var demo bytes.Buffer
+	if err := binary.Write(&demo, binary.LittleEndian, int32(1)); err != nil {
+		t.Fatalf("write sequence: %v", err)
+	}
+	if err := binary.Write(&demo, binary.LittleEndian, int32(4)); err != nil {
+		t.Fatalf("write packet size: %v", err)
+	}
+	demo.Write([]byte{0x00, 0x01})
+
+	if err := os.WriteFile(path, demo.Bytes(), 0o644); err != nil {
+		t.Fatalf("write demo: %v", err)
+	}
+	if err := parser.parseFile(path); err != nil {
+		t.Fatalf("parseFile returned unexpected error: %v", err)
 	}
 }

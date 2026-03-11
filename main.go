@@ -4,12 +4,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 
 	"github.com/spf13/cobra"
 )
 
 func main() {
 	command := newRootCommand(os.Stdout, os.Stderr, runParser)
+	command.SetArgs(normalizeOptionalIntFlags(os.Args[1:]))
 	if err := command.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -71,4 +73,34 @@ func runParser(out io.Writer, options parserOptions, paths []string) error {
 	}
 
 	return nil
+}
+
+func normalizeOptionalIntFlags(args []string) []string {
+	normalized := make([]string, 0, len(args))
+
+	for i := 0; i < len(args); i++ {
+		current := args[i]
+		if !isOptionalIntFlag(current) || i+1 >= len(args) {
+			normalized = append(normalized, current)
+			continue
+		}
+		if _, err := strconv.Atoi(args[i+1]); err != nil {
+			normalized = append(normalized, current)
+			continue
+		}
+
+		normalized = append(normalized, current+"="+args[i+1])
+		i++
+	}
+
+	return normalized
+}
+
+func isOptionalIntFlag(flag string) bool {
+	switch flag {
+	case "--multikills-only", "--multikill-headshots-only":
+		return true
+	default:
+		return false
+	}
 }

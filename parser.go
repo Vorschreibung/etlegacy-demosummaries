@@ -109,15 +109,17 @@ func (p *parser) parseFile(path string) error {
 				return nil
 			}
 			if errors.Is(err, io.ErrUnexpectedEOF) {
-				return fmt.Errorf("truncated demo header: %w", err)
+				p.flushAllMultiKillWindows()
+				return nil
 			}
 			return err
 		}
 
 		var size int32
 		if err := binary.Read(file, binary.LittleEndian, &size); err != nil {
-			if errors.Is(err, io.ErrUnexpectedEOF) {
-				return fmt.Errorf("truncated demo packet header: %w", err)
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				p.flushAllMultiKillWindows()
+				return nil
 			}
 			return err
 		}
@@ -132,7 +134,11 @@ func (p *parser) parseFile(path string) error {
 
 		packet := make([]byte, size)
 		if _, err := io.ReadFull(file, packet); err != nil {
-			return fmt.Errorf("truncated demo packet: %w", err)
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				p.flushAllMultiKillWindows()
+				return nil
+			}
+			return err
 		}
 
 		if err := p.parsePacket(int(sequence), packet); err != nil {
