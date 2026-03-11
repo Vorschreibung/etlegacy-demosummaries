@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master main]
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:  # enable running manually
+
+# cancel previous unfinished/running jobs in each separate branch
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: prefix-dev/setup-pixi@v0.9.4
+        with:
+          pixi-version: v0.62.2
+          cache: true
+
+      - name: Run build
+        run: pixi run build
+
+      - name: Tag current commit
+        if: github.event_name != 'pull_request'
+        env:
+          TAG_NAME: ${{ github.sha }}
+        run: |
+          if git rev-parse "refs/tags/${TAG_NAME}" >/dev/null 2>&1; then
+            exit 0
+          fi
+          git tag "${TAG_NAME}" "${GITHUB_SHA}"
+          git push origin "refs/tags/${TAG_NAME}"
+
+      - name: Create GitHub release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.sha }}
+        run: |
+          if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
+            exit 0
+          fi
+          gh release create "${TAG_NAME}" \
+            --title "${TAG_NAME}" \
+            --target "${GITHUB_SHA}"
+
+      - name: Upload release assets
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.sha }}
+        run: gh release upload "${TAG_NAME}" ./bin/* --clobber
