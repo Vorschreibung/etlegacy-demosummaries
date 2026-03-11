@@ -40,10 +40,15 @@ jobs:
       - name: Run build
         run: pixi run build
 
+      - name: Determine release tag
+        if: github.event_name != 'pull_request'
+        id: release_tag
+        run: echo "tag_name=$(git rev-parse --short=12 "${GITHUB_SHA}")" >> "${GITHUB_OUTPUT}"
+
       - name: Tag current commit
         if: github.event_name != 'pull_request'
         env:
-          TAG_NAME: ${{ github.sha }}
+          TAG_NAME: ${{ steps.release_tag.outputs.tag_name }}
         run: |
           if git rev-parse "refs/tags/${TAG_NAME}" >/dev/null 2>&1; then
             exit 0
@@ -55,7 +60,7 @@ jobs:
         if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG_NAME: ${{ github.sha }}
+          TAG_NAME: ${{ steps.release_tag.outputs.tag_name }}
         run: |
           if gh release view "${TAG_NAME}" >/dev/null 2>&1; then
             exit 0
@@ -68,5 +73,5 @@ jobs:
         if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG_NAME: ${{ github.sha }}
+          TAG_NAME: ${{ steps.release_tag.outputs.tag_name }}
         run: gh release upload "${TAG_NAME}" ./bin/* --clobber
