@@ -10,6 +10,7 @@ const (
 	hmax         = 256
 	nytSymbol    = hmax
 	internalNode = hmax + 1
+	huffFastBits = 11
 )
 
 type huffHead struct {
@@ -45,6 +46,13 @@ type huffTree struct {
 }
 
 var messageHuffmanRoot = buildMessageHuffmanTree()
+var messageHuffmanFast = buildMessageHuffmanFastTable(messageHuffmanRoot)
+
+type huffFastEntry struct {
+	symbol int16
+	bits   uint8
+	node   *huffNode
+}
 
 // msgReader mirrors MSG_ReadBits for in-band server messages.
 type msgReader struct {
@@ -71,6 +79,41 @@ func buildMessageHuffmanTree() *huffNode {
 	}
 
 	return tree.tree
+}
+
+func buildMessageHuffmanFastTable(root *huffNode) [1 << huffFastBits]huffFastEntry {
+	var table [1 << huffFastBits]huffFastEntry
+
+	for prefix := range table {
+		node := root
+		bitsUsed := 0
+		for bitsUsed < huffFastBits && node != nil && node.symbol == internalNode {
+			if prefix&(1<<bitsUsed) != 0 {
+				node = node.right
+			} else {
+				node = node.left
+			}
+			bitsUsed++
+		}
+
+		if node == nil {
+			continue
+		}
+		if node.symbol == internalNode {
+			table[prefix] = huffFastEntry{
+				bits: huffFastBits,
+				node: node,
+			}
+			continue
+		}
+
+		table[prefix] = huffFastEntry{
+			symbol: int16(node.symbol),
+			bits:   uint8(bitsUsed),
+		}
+	}
+
+	return table
 }
 
 func newHuffTree() *huffTree {
@@ -282,21 +325,41 @@ func (h *huffTree) addRef(ch byte) {
 	h.increment(h.loc[ch])
 }
 
-func (r *msgReader) getBit() (int, error) {
-	maxBits := r.cursize << 3
-	if r.bit >= maxBits {
-		r.readcount = r.cursize + 1
-		return 0, io.ErrUnexpectedEOF
-	}
-
-	value := int((r.data[r.bit>>3] >> (r.bit & 7)) & 0x1)
-	r.bit++
-
-	return value, nil
-}
-
 func (r *msgReader) readHuffByte() (int, error) {
 	maxBits := r.cursize << 3
+
+	if maxBits-r.bit >= huffFastBits {
+		entry := messageHuffmanFast[r.peekBits(huffFastBits)]
+		if entry.node == nil {
+			r.bit += int(entry.bits)
+			return int(entry.symbol), nil
+		}
+
+		node := entry.node
+		bit := r.bit + huffFastBits
+		for node != nil && node.symbol == internalNode {
+			if bit >= maxBits {
+				r.readcount = r.cursize + 1
+				return 0, io.ErrUnexpectedEOF
+			}
+
+			bitValue := int((r.data[bit>>3] >> (bit & 7)) & 0x1)
+			bit++
+			if bitValue != 0 {
+				node = node.right
+			} else {
+				node = node.left
+			}
+		}
+
+		if node == nil {
+			return 0, fmt.Errorf("illegal huffman tree")
+		}
+
+		r.bit = bit
+		return node.symbol, nil
+	}
+
 	node := messageHuffmanRoot
 
 	for node != nil && node.symbol == internalNode {
@@ -321,6 +384,21 @@ func (r *msgReader) readHuffByte() (int, error) {
 	return node.symbol, nil
 }
 
+func (r *msgReader) peekBits(bits uint) int {
+	byteIndex := r.bit >> 3
+	shift := uint(r.bit & 7)
+
+	word := uint32(r.data[byteIndex])
+	if byteIndex+1 < r.cursize {
+		word |= uint32(r.data[byteIndex+1]) << 8
+	}
+	if byteIndex+2 < r.cursize {
+		word |= uint32(r.data[byteIndex+2]) << 16
+	}
+
+	return int((word >> shift) & ((uint32(1) << bits) - 1))
+}
+
 func (r *msgReader) readBits(bits int) (int32, error) {
 	if bits == 0 {
 		return 0, nil
@@ -343,11 +421,8 @@ func (r *msgReader) readBits(bits int) (int32, error) {
 		}
 
 		for i := 0; i < lowBits; i++ {
-			bit, err := r.getBit()
-			if err != nil {
-				return 0, err
-			}
-			value |= uint32(bit) << uint(i)
+			value |= uint32((r.data[r.bit>>3]>>(r.bit&7))&0x1) << uint(i)
+			r.bit++
 		}
 		bits -= lowBits
 	}

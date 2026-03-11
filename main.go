@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"os"
@@ -83,7 +84,7 @@ func runParserInOutputDir(out io.Writer, warn io.Writer, options parserOptions, 
 			return fmt.Errorf("%s: create %s: %w", path, logPath, err)
 		}
 
-		demoOut := io.MultiWriter(out, logFile)
+		demoOut := bufio.NewWriterSize(io.MultiWriter(out, logFile), 64*1024)
 		if _, err := fmt.Fprintf(demoOut, "--- START - %s ---\n", path); err != nil {
 			_ = logFile.Close()
 			return fmt.Errorf("%s: write %s: %w", path, logPath, err)
@@ -91,13 +92,19 @@ func runParserInOutputDir(out io.Writer, warn io.Writer, options parserOptions, 
 
 		parser := newParserWithWarning(demoOut, warn, options)
 		if err := parser.parseFile(path); err != nil {
+			_ = demoOut.Flush()
 			_ = logFile.Close()
 			return fmt.Errorf("%s: %w", path, err)
 		}
 
 		if _, err := fmt.Fprintf(demoOut, "---  END  - %s ---\n", path); err != nil {
+			_ = demoOut.Flush()
 			_ = logFile.Close()
 			return fmt.Errorf("%s: write %s: %w", path, logPath, err)
+		}
+		if err := demoOut.Flush(); err != nil {
+			_ = logFile.Close()
+			return fmt.Errorf("%s: flush %s: %w", path, logPath, err)
 		}
 
 		if err := logFile.Close(); err != nil {
