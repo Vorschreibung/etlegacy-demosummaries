@@ -1,3 +1,6 @@
 etlegacy-demosummaries
 etlegacy-demosummaries.exe
 log-*.txt
+
+/.pixi/
+/bin/
