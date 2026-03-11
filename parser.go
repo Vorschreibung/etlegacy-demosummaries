@@ -11,8 +11,24 @@ import (
 	"strings"
 )
 
+type parserOptions struct {
+	multiKillsOnly bool
+}
+
+type killOutput struct {
+	serverTime int
+	line       string
+}
+
+type pendingKill struct {
+	output  killOutput
+	emitted bool
+}
+
 type parser struct {
 	out io.Writer
+
+	options parserOptions
 
 	serverCommandSequence int
 	levelStartTime        int
@@ -29,12 +45,15 @@ type parser struct {
 	// Temp event entities stay around for a few snapshots. Track which entity
 	// numbers have already been emitted so obituaries are printed once.
 	activeTempEntities map[int]struct{}
+	pendingKills       map[int]pendingKill
 }
 
-func newParser(out io.Writer) *parser {
+func newParser(out io.Writer, options parserOptions) *parser {
 	p := &parser{
 		out:                out,
+		options:            options,
 		activeTempEntities: make(map[int]struct{}),
+		pendingKills:       make(map[int]pendingKill),
 	}
 	p.resetState()
 
@@ -52,6 +71,7 @@ func (p *parser) resetState() {
 	p.parseEntitiesNum = 0
 	p.snapshots = [packetBackup]snapshotState{}
 	p.activeTempEntities = make(map[int]struct{})
+	p.pendingKills = make(map[int]pendingKill)
 }
 
 func (p *parser) parseFile(path string) error {
@@ -729,12 +749,15 @@ func (p *parser) emitKill(serverTime int, state *entityState) {
 		return
 	}
 
-	fmt.Fprintf(p.out, "%s ; %s ; %s ; %s\n",
-		timestamp,
-		p.playerName(attacker),
-		p.playerName(target),
-		relation,
-	)
+	p.writeKill(attacker, killOutput{
+		serverTime: serverTime,
+		line: fmt.Sprintf("%s ; %s ; %s ; %s",
+			timestamp,
+			p.playerName(attacker),
+			p.playerName(target),
+			relation,
+		),
+	})
 }
 
 func (p *parser) killRelation(attacker, target int) (string, bool) {
@@ -754,6 +777,29 @@ func (p *parser) killRelation(attacker, target int) (string, bool) {
 	}
 
 	return "", false
+}
+
+func (p *parser) writeKill(attacker int, output killOutput) {
+	if !p.options.multiKillsOnly {
+		fmt.Fprintln(p.out, output.line)
+		return
+	}
+
+	previous, ok := p.pendingKills[attacker]
+	if !ok || output.serverTime-previous.output.serverTime > 3000 {
+		p.pendingKills[attacker] = pendingKill{output: output}
+		return
+	}
+
+	if !previous.emitted {
+		fmt.Fprintln(p.out, previous.output.line)
+	}
+	fmt.Fprintln(p.out, output.line)
+
+	p.pendingKills[attacker] = pendingKill{
+		output:  output,
+		emitted: true,
+	}
 }
 
 func (p *parser) handleServerCommand(command string) {
@@ -786,6 +832,7 @@ func (p *parser) handleServerCommand(command string) {
 		}
 	case "map_restart":
 		p.activeTempEntities = make(map[int]struct{})
+		p.pendingKills = make(map[int]pendingKill)
 	}
 }
 
