@@ -9,6 +9,20 @@ import (
 	"testing"
 )
 
+func expectedKillLine(timestamp string, headshot bool, attacker, weapon, target, relation string) string {
+	return timestamp + " ; " + obituaryKillLabel(headshot) + " ; " +
+		attacker + " ; " + weapon + " ; " + target + " ; " + relation
+}
+
+func TestObituaryKillLabelPadding(t *testing.T) {
+	if got := obituaryKillLabel(false); got != "Kill        " {
+		t.Fatalf("unexpected padded kill label: %q", got)
+	}
+	if got := obituaryKillLabel(true); got != "HeadshotKill" {
+		t.Fatalf("unexpected headshot kill label: %q", got)
+	}
+}
+
 func TestEmitKillMultiKillWindowsSeparated(t *testing.T) {
 	var out bytes.Buffer
 
@@ -73,19 +87,19 @@ func TestEmitKillMultiKillWindowsSeparated(t *testing.T) {
 	if len(lines) != 5 {
 		t.Fatalf("expected 5 lines including separator, got %d: %q", len(lines), out.String())
 	}
-	if lines[0] != "00:01.00 ; Kill ; Killer ; MP40 ; VictimA ; Enemy" {
+	if lines[0] != expectedKillLine("00:01.00", false, "Killer", "MP40", "VictimA", "Enemy") {
 		t.Fatalf("unexpected first multikill line: %q", lines[0])
 	}
-	if lines[1] != "00:03.80 ; Kill ; Killer ; MP40 ; VictimB ; Enemy" {
+	if lines[1] != expectedKillLine("00:03.80", false, "Killer", "MP40", "VictimB", "Enemy") {
 		t.Fatalf("unexpected second multikill line: %q", lines[1])
 	}
 	if lines[2] != "---" {
 		t.Fatalf("missing window separator: %q", lines[2])
 	}
-	if lines[3] != "00:08.00 ; Kill ; Killer ; MP40 ; VictimC ; Enemy" {
+	if lines[3] != expectedKillLine("00:08.00", false, "Killer", "MP40", "VictimC", "Enemy") {
 		t.Fatalf("unexpected third multikill line: %q", lines[3])
 	}
-	if lines[4] != "00:10.30 ; Kill ; Killer ; MP40 ; VictimD ; Enemy" {
+	if lines[4] != expectedKillLine("00:10.30", false, "Killer", "MP40", "VictimD", "Enemy") {
 		t.Fatalf("unexpected fourth multikill line: %q", lines[4])
 	}
 }
@@ -143,13 +157,13 @@ func TestEmitKillMultiKillMinimumFiltersShortWindows(t *testing.T) {
 	if len(lines) != 3 {
 		t.Fatalf("expected only the 3-kill window to print, got %d lines: %q", len(lines), out.String())
 	}
-	if lines[0] != "00:08.00 ; Kill ; Killer ; MP40 ; VictimC ; Enemy" {
+	if lines[0] != expectedKillLine("00:08.00", false, "Killer", "MP40", "VictimC", "Enemy") {
 		t.Fatalf("unexpected first printed line: %q", lines[0])
 	}
-	if lines[1] != "00:10.20 ; Kill ; Killer ; MP40 ; VictimD ; Enemy" {
+	if lines[1] != expectedKillLine("00:10.20", false, "Killer", "MP40", "VictimD", "Enemy") {
 		t.Fatalf("unexpected second printed line: %q", lines[1])
 	}
-	if lines[2] != "00:12.20 ; Kill ; Killer ; MP40 ; VictimE ; Enemy" {
+	if lines[2] != expectedKillLine("00:12.20", false, "Killer", "MP40", "VictimE", "Enemy") {
 		t.Fatalf("unexpected third printed line: %q", lines[2])
 	}
 }
@@ -168,7 +182,7 @@ func TestEmitKillSelfMultiKillClassification(t *testing.T) {
 		},
 	})
 
-	if got := strings.TrimSpace(out.String()); got != "00:02.50 ; Kill ; Solo ; MP40 ; Solo ; Self" {
+	if got := strings.TrimSpace(out.String()); got != expectedKillLine("00:02.50", false, "Solo", "MP40", "Solo", "Self") {
 		t.Fatalf("unexpected self-kill output: %q", got)
 	}
 }
@@ -197,7 +211,7 @@ func TestEmitKillFiltersByAttackerName(t *testing.T) {
 		},
 	})
 
-	if got := strings.TrimSpace(out.String()); got != "00:01.00 ; Kill ; Killer ; MP40 ; VictimA ; Enemy" {
+	if got := strings.TrimSpace(out.String()); got != expectedKillLine("00:01.00", false, "Killer", "MP40", "VictimA", "Enemy") {
 		t.Fatalf("unexpected filtered output: %q", got)
 	}
 }
@@ -241,10 +255,10 @@ func TestEmitKillMultiKillHeadshotsOnly(t *testing.T) {
 	if len(lines) != 2 {
 		t.Fatalf("expected only the headshot window to print, got %d lines: %q", len(lines), out.String())
 	}
-	if lines[0] != "00:01.00 ; Kill ; Killer ; MP40 ; VictimA ; Enemy" {
+	if lines[0] != expectedKillLine("00:01.00", true, "Killer", "MP40", "VictimA", "Enemy") {
 		t.Fatalf("unexpected first headshot line: %q", lines[0])
 	}
-	if lines[1] != "00:03.80 ; Kill ; Killer ; MP40 ; VictimC ; Enemy" {
+	if lines[1] != expectedKillLine("00:03.80", true, "Killer", "MP40", "VictimC", "Enemy") {
 		t.Fatalf("unexpected second headshot line: %q", lines[1])
 	}
 }

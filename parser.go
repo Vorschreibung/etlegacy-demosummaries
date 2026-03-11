@@ -38,6 +38,11 @@ type killOutput struct {
 	line       string
 }
 
+const (
+	killLabel         = "Kill"
+	headshotKillLabel = "HeadshotKill"
+)
+
 type multiKillWindow struct {
 	outputs []killOutput
 }
@@ -780,10 +785,11 @@ func (p *parser) emitKill(serverTime int, state *entityState) {
 	if !ok {
 		return
 	}
+	headshot := state.Fields[fieldLoopSound] != 0
 	if p.options.multiKillEnabled() && relation == "Self" {
 		return
 	}
-	if p.options.multiKillHeadshotsOnly() && state.Fields[fieldLoopSound] == 0 {
+	if p.options.multiKillHeadshotsOnly() && !headshot {
 		return
 	}
 
@@ -796,8 +802,9 @@ func (p *parser) emitKill(serverTime int, state *entityState) {
 
 	p.writeKill(attacker, killOutput{
 		serverTime: serverTime,
-		line: fmt.Sprintf("%s ; Kill ; %s ; %s ; %s ; %s",
+		line: fmt.Sprintf("%s ; %s ; %s ; %s ; %s ; %s",
 			timestamp,
+			obituaryKillLabel(headshot),
 			attackerName,
 			weaponName,
 			p.playerName(target),
@@ -941,6 +948,14 @@ func obituaryWeaponName(weapon int) string {
 	}
 
 	return weaponNames[weapon]
+}
+
+func obituaryKillLabel(headshot bool) string {
+	if headshot {
+		return headshotKillLabel
+	}
+
+	return fmt.Sprintf("%-*s", len(headshotKillLabel), killLabel)
 }
 
 func (p *parser) handleServerCommand(command string) {
