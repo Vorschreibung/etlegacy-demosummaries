@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -20,9 +21,8 @@ type killOutput struct {
 	line       string
 }
 
-type pendingKill struct {
-	output  killOutput
-	emitted bool
+type multiKillWindow struct {
+	outputs []killOutput
 }
 
 type parser struct {
@@ -45,7 +45,9 @@ type parser struct {
 	// Temp event entities stay around for a few snapshots. Track which entity
 	// numbers have already been emitted so obituaries are printed once.
 	activeTempEntities map[int]struct{}
-	pendingKills       map[int]pendingKill
+	pendingKills       map[int]multiKillWindow
+
+	printedMultiKillWindow bool
 }
 
 func newParser(out io.Writer, options parserOptions) *parser {
@@ -53,7 +55,7 @@ func newParser(out io.Writer, options parserOptions) *parser {
 		out:                out,
 		options:            options,
 		activeTempEntities: make(map[int]struct{}),
-		pendingKills:       make(map[int]pendingKill),
+		pendingKills:       make(map[int]multiKillWindow),
 	}
 	p.resetState()
 
@@ -71,7 +73,7 @@ func (p *parser) resetState() {
 	p.parseEntitiesNum = 0
 	p.snapshots = [packetBackup]snapshotState{}
 	p.activeTempEntities = make(map[int]struct{})
-	p.pendingKills = make(map[int]pendingKill)
+	p.pendingKills = make(map[int]multiKillWindow)
 }
 
 func (p *parser) parseFile(path string) error {
@@ -85,6 +87,7 @@ func (p *parser) parseFile(path string) error {
 		var sequence int32
 		if err := binary.Read(file, binary.LittleEndian, &sequence); err != nil {
 			if errors.Is(err, io.EOF) {
+				p.flushAllMultiKillWindows()
 				return nil
 			}
 			if errors.Is(err, io.ErrUnexpectedEOF) {
@@ -102,6 +105,7 @@ func (p *parser) parseFile(path string) error {
 		}
 
 		if size == -1 {
+			p.flushAllMultiKillWindows()
 			return nil
 		}
 		if size < 0 || size > maxMsgLen {
@@ -181,6 +185,7 @@ func (p *parser) parseServerCommand(msg *msgReader) error {
 func (p *parser) parseGamestate(msg *msgReader) error {
 	var empty entityState
 
+	p.flushAllMultiKillWindows()
 	p.resetState()
 
 	sequence, err := msg.readLong()
@@ -785,21 +790,110 @@ func (p *parser) writeKill(attacker int, output killOutput) {
 		return
 	}
 
-	previous, ok := p.pendingKills[attacker]
-	if !ok || output.serverTime-previous.output.serverTime > 3000 {
-		p.pendingKills[attacker] = pendingKill{output: output}
+	p.flushExpiredMultiKillWindows(output.serverTime)
+
+	window := p.pendingKills[attacker]
+	if len(window.outputs) == 0 {
+		p.pendingKills[attacker] = multiKillWindow{
+			outputs: []killOutput{output},
+		}
 		return
 	}
 
-	if !previous.emitted {
-		fmt.Fprintln(p.out, previous.output.line)
+	lastOutput := window.outputs[len(window.outputs)-1]
+	if output.serverTime-lastOutput.serverTime > 3000 {
+		p.pendingKills[attacker] = multiKillWindow{
+			outputs: []killOutput{output},
+		}
+		return
 	}
-	fmt.Fprintln(p.out, output.line)
 
-	p.pendingKills[attacker] = pendingKill{
-		output:  output,
-		emitted: true,
+	window.outputs = append(window.outputs, output)
+	p.pendingKills[attacker] = window
+}
+
+func (p *parser) flushExpiredMultiKillWindows(currentTime int) {
+	type windowEntry struct {
+		attacker int
+		window   multiKillWindow
 	}
+
+	expired := make([]windowEntry, 0, len(p.pendingKills))
+	for attacker, window := range p.pendingKills {
+		if len(window.outputs) == 0 {
+			delete(p.pendingKills, attacker)
+			continue
+		}
+		lastOutput := window.outputs[len(window.outputs)-1]
+		if currentTime-lastOutput.serverTime > 3000 {
+			expired = append(expired, windowEntry{
+				attacker: attacker,
+				window:   window,
+			})
+		}
+	}
+
+	sort.Slice(expired, func(i, j int) bool {
+		left := expired[i].window.outputs[0]
+		right := expired[j].window.outputs[0]
+		if left.serverTime != right.serverTime {
+			return left.serverTime < right.serverTime
+		}
+		return expired[i].attacker < expired[j].attacker
+	})
+
+	for _, entry := range expired {
+		p.emitMultiKillWindow(entry.window)
+		delete(p.pendingKills, entry.attacker)
+	}
+}
+
+func (p *parser) flushAllMultiKillWindows() {
+	type windowEntry struct {
+		attacker int
+		window   multiKillWindow
+	}
+
+	windows := make([]windowEntry, 0, len(p.pendingKills))
+	for attacker, window := range p.pendingKills {
+		if len(window.outputs) == 0 {
+			continue
+		}
+		windows = append(windows, windowEntry{
+			attacker: attacker,
+			window:   window,
+		})
+	}
+
+	sort.Slice(windows, func(i, j int) bool {
+		left := windows[i].window.outputs[0]
+		right := windows[j].window.outputs[0]
+		if left.serverTime != right.serverTime {
+			return left.serverTime < right.serverTime
+		}
+		return windows[i].attacker < windows[j].attacker
+	})
+
+	for _, entry := range windows {
+		p.emitMultiKillWindow(entry.window)
+		delete(p.pendingKills, entry.attacker)
+	}
+}
+
+func (p *parser) emitMultiKillWindow(window multiKillWindow) {
+	if len(window.outputs) < 2 {
+		return
+	}
+
+	if p.printedMultiKillWindow {
+		fmt.Fprintln(p.out, "---")
+	}
+
+	for _, output := range window.outputs {
+		fmt.Fprintln(p.out, output.line)
+	}
+
+	p.printedMultiKillWindow = true
 }
 
 func (p *parser) handleServerCommand(command string) {
@@ -831,8 +925,9 @@ func (p *parser) handleServerCommand(command string) {
 			}
 		}
 	case "map_restart":
+		p.flushAllMultiKillWindows()
 		p.activeTempEntities = make(map[int]struct{})
-		p.pendingKills = make(map[int]pendingKill)
+		p.pendingKills = make(map[int]multiKillWindow)
 	}
 }
 
