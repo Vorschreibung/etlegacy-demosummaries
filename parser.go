@@ -792,11 +792,14 @@ func (p *parser) emitKill(serverTime int, state *entityState) {
 		return
 	}
 
+	weaponName := obituaryWeaponName(int(state.Fields[fieldWeapon]))
+
 	p.writeKill(attacker, killOutput{
 		serverTime: serverTime,
-		line: fmt.Sprintf("%s ; %s ; %s ; %s",
+		line: fmt.Sprintf("%s ; Kill ; %s ; %s ; %s ; %s",
 			timestamp,
 			attackerName,
+			weaponName,
 			p.playerName(target),
 			relation,
 		),
@@ -930,6 +933,14 @@ func (p *parser) emitMultiKillWindow(window multiKillWindow) {
 	}
 
 	p.printedMultiKillWindow = true
+}
+
+func obituaryWeaponName(weapon int) string {
+	if weapon < 0 || weapon >= len(weaponNames) {
+		return "UNKNOWN"
+	}
+
+	return weaponNames[weapon]
 }
 
 func (p *parser) handleServerCommand(command string) {

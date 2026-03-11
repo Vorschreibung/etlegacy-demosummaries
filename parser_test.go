@@ -24,6 +24,7 @@ func TestEmitKillMultiKillWindowsSeparated(t *testing.T) {
 		Fields: [entityFieldCount]int32{
 			fieldOtherEntityNum:  2,
 			fieldOtherEntityNum2: 1,
+			fieldWeapon:          weaponMP40,
 		},
 	})
 	if out.Len() != 0 {
@@ -34,6 +35,7 @@ func TestEmitKillMultiKillWindowsSeparated(t *testing.T) {
 		Fields: [entityFieldCount]int32{
 			fieldOtherEntityNum:  1,
 			fieldOtherEntityNum2: 1,
+			fieldWeapon:          weaponMP40,
 		},
 	})
 	if out.Len() != 0 {
@@ -44,6 +46,7 @@ func TestEmitKillMultiKillWindowsSeparated(t *testing.T) {
 		Fields: [entityFieldCount]int32{
 			fieldOtherEntityNum:  3,
 			fieldOtherEntityNum2: 1,
+			fieldWeapon:          weaponMP40,
 		},
 	})
 	if out.Len() != 0 {
@@ -54,12 +57,14 @@ func TestEmitKillMultiKillWindowsSeparated(t *testing.T) {
 		Fields: [entityFieldCount]int32{
 			fieldOtherEntityNum:  4,
 			fieldOtherEntityNum2: 1,
+			fieldWeapon:          weaponMP40,
 		},
 	})
 	parser.emitKill(11300, &entityState{
 		Fields: [entityFieldCount]int32{
 			fieldOtherEntityNum:  5,
 			fieldOtherEntityNum2: 1,
+			fieldWeapon:          weaponMP40,
 		},
 	})
 	parser.flushAllMultiKillWindows()
@@ -68,19 +73,19 @@ func TestEmitKillMultiKillWindowsSeparated(t *testing.T) {
 	if len(lines) != 5 {
 		t.Fatalf("expected 5 lines including separator, got %d: %q", len(lines), out.String())
 	}
-	if lines[0] != "00:01.00 ; Killer ; VictimA ; Enemy" {
+	if lines[0] != "00:01.00 ; Kill ; Killer ; MP40 ; VictimA ; Enemy" {
 		t.Fatalf("unexpected first multikill line: %q", lines[0])
 	}
-	if lines[1] != "00:03.80 ; Killer ; VictimB ; Enemy" {
+	if lines[1] != "00:03.80 ; Kill ; Killer ; MP40 ; VictimB ; Enemy" {
 		t.Fatalf("unexpected second multikill line: %q", lines[1])
 	}
 	if lines[2] != "---" {
 		t.Fatalf("missing window separator: %q", lines[2])
 	}
-	if lines[3] != "00:08.00 ; Killer ; VictimC ; Enemy" {
+	if lines[3] != "00:08.00 ; Kill ; Killer ; MP40 ; VictimC ; Enemy" {
 		t.Fatalf("unexpected third multikill line: %q", lines[3])
 	}
-	if lines[4] != "00:10.30 ; Killer ; VictimD ; Enemy" {
+	if lines[4] != "00:10.30 ; Kill ; Killer ; MP40 ; VictimD ; Enemy" {
 		t.Fatalf("unexpected fourth multikill line: %q", lines[4])
 	}
 }
@@ -101,30 +106,35 @@ func TestEmitKillMultiKillMinimumFiltersShortWindows(t *testing.T) {
 		Fields: [entityFieldCount]int32{
 			fieldOtherEntityNum:  2,
 			fieldOtherEntityNum2: 1,
+			fieldWeapon:          weaponMP40,
 		},
 	})
 	parser.emitKill(4800, &entityState{
 		Fields: [entityFieldCount]int32{
 			fieldOtherEntityNum:  3,
 			fieldOtherEntityNum2: 1,
+			fieldWeapon:          weaponMP40,
 		},
 	})
 	parser.emitKill(9000, &entityState{
 		Fields: [entityFieldCount]int32{
 			fieldOtherEntityNum:  4,
 			fieldOtherEntityNum2: 1,
+			fieldWeapon:          weaponMP40,
 		},
 	})
 	parser.emitKill(11200, &entityState{
 		Fields: [entityFieldCount]int32{
 			fieldOtherEntityNum:  5,
 			fieldOtherEntityNum2: 1,
+			fieldWeapon:          weaponMP40,
 		},
 	})
 	parser.emitKill(13200, &entityState{
 		Fields: [entityFieldCount]int32{
 			fieldOtherEntityNum:  6,
 			fieldOtherEntityNum2: 1,
+			fieldWeapon:          weaponMP40,
 		},
 	})
 	parser.flushAllMultiKillWindows()
@@ -133,13 +143,13 @@ func TestEmitKillMultiKillMinimumFiltersShortWindows(t *testing.T) {
 	if len(lines) != 3 {
 		t.Fatalf("expected only the 3-kill window to print, got %d lines: %q", len(lines), out.String())
 	}
-	if lines[0] != "00:08.00 ; Killer ; VictimC ; Enemy" {
+	if lines[0] != "00:08.00 ; Kill ; Killer ; MP40 ; VictimC ; Enemy" {
 		t.Fatalf("unexpected first printed line: %q", lines[0])
 	}
-	if lines[1] != "00:10.20 ; Killer ; VictimD ; Enemy" {
+	if lines[1] != "00:10.20 ; Kill ; Killer ; MP40 ; VictimD ; Enemy" {
 		t.Fatalf("unexpected second printed line: %q", lines[1])
 	}
-	if lines[2] != "00:12.20 ; Killer ; VictimE ; Enemy" {
+	if lines[2] != "00:12.20 ; Kill ; Killer ; MP40 ; VictimE ; Enemy" {
 		t.Fatalf("unexpected third printed line: %q", lines[2])
 	}
 }
@@ -154,10 +164,11 @@ func TestEmitKillSelfMultiKillClassification(t *testing.T) {
 		Fields: [entityFieldCount]int32{
 			fieldOtherEntityNum:  5,
 			fieldOtherEntityNum2: 5,
+			fieldWeapon:          weaponMP40,
 		},
 	})
 
-	if got := strings.TrimSpace(out.String()); got != "00:02.50 ; Solo ; Solo ; Self" {
+	if got := strings.TrimSpace(out.String()); got != "00:02.50 ; Kill ; Solo ; MP40 ; Solo ; Self" {
 		t.Fatalf("unexpected self-kill output: %q", got)
 	}
 }
@@ -175,16 +186,18 @@ func TestEmitKillFiltersByAttackerName(t *testing.T) {
 		Fields: [entityFieldCount]int32{
 			fieldOtherEntityNum:  2,
 			fieldOtherEntityNum2: 1,
+			fieldWeapon:          weaponMP40,
 		},
 	})
 	parser.emitKill(2000, &entityState{
 		Fields: [entityFieldCount]int32{
 			fieldOtherEntityNum:  4,
 			fieldOtherEntityNum2: 3,
+			fieldWeapon:          weaponMP40,
 		},
 	})
 
-	if got := strings.TrimSpace(out.String()); got != "00:01.00 ; Killer ; VictimA ; Enemy" {
+	if got := strings.TrimSpace(out.String()); got != "00:01.00 ; Kill ; Killer ; MP40 ; VictimA ; Enemy" {
 		t.Fatalf("unexpected filtered output: %q", got)
 	}
 }
@@ -204,12 +217,14 @@ func TestEmitKillMultiKillHeadshotsOnly(t *testing.T) {
 			fieldOtherEntityNum:  2,
 			fieldOtherEntityNum2: 1,
 			fieldLoopSound:       1,
+			fieldWeapon:          weaponMP40,
 		},
 	})
 	parser.emitKill(3000, &entityState{
 		Fields: [entityFieldCount]int32{
 			fieldOtherEntityNum:  3,
 			fieldOtherEntityNum2: 1,
+			fieldWeapon:          weaponMP40,
 		},
 	})
 	parser.emitKill(4800, &entityState{
@@ -217,6 +232,7 @@ func TestEmitKillMultiKillHeadshotsOnly(t *testing.T) {
 			fieldOtherEntityNum:  4,
 			fieldOtherEntityNum2: 1,
 			fieldLoopSound:       1,
+			fieldWeapon:          weaponMP40,
 		},
 	})
 	parser.flushAllMultiKillWindows()
@@ -225,10 +241,10 @@ func TestEmitKillMultiKillHeadshotsOnly(t *testing.T) {
 	if len(lines) != 2 {
 		t.Fatalf("expected only the headshot window to print, got %d lines: %q", len(lines), out.String())
 	}
-	if lines[0] != "00:01.00 ; Killer ; VictimA ; Enemy" {
+	if lines[0] != "00:01.00 ; Kill ; Killer ; MP40 ; VictimA ; Enemy" {
 		t.Fatalf("unexpected first headshot line: %q", lines[0])
 	}
-	if lines[1] != "00:03.80 ; Killer ; VictimC ; Enemy" {
+	if lines[1] != "00:03.80 ; Kill ; Killer ; MP40 ; VictimC ; Enemy" {
 		t.Fatalf("unexpected second headshot line: %q", lines[1])
 	}
 }

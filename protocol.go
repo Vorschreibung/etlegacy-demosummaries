@@ -69,6 +69,14 @@ const (
 	fieldOtherEntityNum  = 34
 	fieldOtherEntityNum2 = 35
 	fieldLoopSound       = 37
+	fieldWeapon          = 57
+)
+
+const (
+	weaponNone  = 0
+	weaponKnife = 1
+	weaponLuger = 2
+	weaponMP40  = 3
 )
 
 var entityFieldBits = [entityFieldCount]int{
@@ -83,6 +91,65 @@ var playerStateFieldBits = [playerStateFieldCount]int{
 	10, 16, 16, 10, 10, 8, 24, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 32, 32, 7,
 	4, 10, 0, 0, 0, -8, 8, 8, 8, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 8, 16, 8, 8, 32, 8, 8, 8, 8, 32, 8, 8, 2,
+}
+
+var weaponNames = [...]string{
+	"NONE",
+	"KNIFE",
+	"LUGER",
+	"MP40",
+	"GRENADE_LAUNCHER",
+	"PANZERFAUST",
+	"FLAMETHROWER",
+	"COLT",
+	"THOMPSON",
+	"GRENADE_PINEAPPLE",
+	"STEN",
+	"MEDIC_SYRINGE",
+	"AMMO",
+	"ARTY",
+	"SILENCER",
+	"DYNAMITE",
+	"SMOKETRAIL",
+	"MAPMORTAR",
+	"VERYBIGEXPLOSION",
+	"MEDKIT",
+	"BINOCULARS",
+	"PLIERS",
+	"SMOKE_MARKER",
+	"KAR98",
+	"CARBINE",
+	"GARAND",
+	"LANDMINE",
+	"SATCHEL",
+	"SATCHEL_DET",
+	"SMOKE_BOMB",
+	"MOBILE_MG42",
+	"K43",
+	"FG42",
+	"DUMMY_MG42",
+	"MORTAR",
+	"AKIMBO_COLT",
+	"AKIMBO_LUGER",
+	"GPG40",
+	"M7",
+	"SILENCED_COLT",
+	"GARAND_SCOPE",
+	"K43_SCOPE",
+	"FG42_SCOPE",
+	"MORTAR_SET",
+	"MEDIC_ADRENALINE",
+	"AKIMBO_SILENCEDCOLT",
+	"AKIMBO_SILENCEDLUGER",
+	"MOBILE_MG42_SET",
+	"KNIFE_KABAR",
+	"MOBILE_BROWNING",
+	"MOBILE_BROWNING_SET",
+	"MORTAR2",
+	"MORTAR2_SET",
+	"BAZOOKA",
+	"MP34",
+	"AIRSTRIKE",
 }
 
 type playerInfo struct {
