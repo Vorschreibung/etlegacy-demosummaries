@@ -1,0 +1,15 @@
+{
+  "binName": "etlegacy-demosummaries",
+  "env": {
+    "CGO_ENABLED": "0"
+  },
+  "platforms": [
+    ["darwin", "amd64"],
+    ["darwin", "arm64"],
+    ["illumos", "amd64"],
+    ["linux", "amd64"],
+    ["linux", "arm64"],
+    ["windows", "amd64"]
+  ]
+}
+
