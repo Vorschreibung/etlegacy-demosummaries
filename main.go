@@ -19,7 +19,7 @@ func main() {
 }
 
 func newRootCommand(stdout io.Writer, stderr io.Writer,
-	run func(io.Writer, parserOptions, []string) error) *cobra.Command {
+	run func(io.Writer, io.Writer, parserOptions, []string) error) *cobra.Command {
 	options := parserOptions{}
 
 	command := &cobra.Command{
@@ -44,7 +44,7 @@ func newRootCommand(stdout io.Writer, stderr io.Writer,
 				}
 			}
 
-			return run(stdout, options, args)
+			return run(stdout, stderr, options, args)
 		},
 	}
 
@@ -64,9 +64,9 @@ func newRootCommand(stdout io.Writer, stderr io.Writer,
 	return command
 }
 
-func runParser(out io.Writer, options parserOptions, paths []string) error {
+func runParser(out io.Writer, warn io.Writer, options parserOptions, paths []string) error {
 	for _, path := range paths {
-		parser := newParser(out, options)
+		parser := newParserWithWarning(out, warn, options)
 		if err := parser.parseFile(path); err != nil {
 			return fmt.Errorf("%s: %w", path, err)
 		}

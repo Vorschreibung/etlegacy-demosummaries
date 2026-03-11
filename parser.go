@@ -48,9 +48,13 @@ type multiKillWindow struct {
 }
 
 type parser struct {
-	out io.Writer
+	out  io.Writer
+	warn io.Writer
 
 	options parserOptions
+
+	demoPath                           string
+	warnedAboutObituaryHeadshotSupport bool
 
 	serverCommandSequence int
 	levelStartTime        int
@@ -73,8 +77,13 @@ type parser struct {
 }
 
 func newParser(out io.Writer, options parserOptions) *parser {
+	return newParserWithWarning(out, io.Discard, options)
+}
+
+func newParserWithWarning(out io.Writer, warn io.Writer, options parserOptions) *parser {
 	p := &parser{
 		out:                out,
+		warn:               warn,
 		options:            options,
 		activeTempEntities: make(map[int]struct{}),
 		pendingKills:       make(map[int]multiKillWindow),
@@ -100,6 +109,8 @@ func (p *parser) resetState() {
 }
 
 func (p *parser) parseFile(path string) error {
+	p.demoPath = path
+
 	file, err := os.Open(path)
 	if err != nil {
 		return err
@@ -997,6 +1008,8 @@ func (p *parser) setConfigString(index int, value string) {
 	p.configStrings[index] = value
 
 	switch {
+	case index == csServerInfo || index == csSystemInfo || index == csVersionInfo:
+		p.maybeWarnAboutObituaryHeadshotSupport()
 	case index == csLevelStartTime:
 		startTime, err := strconv.Atoi(value)
 		if err == nil {
@@ -1143,6 +1156,136 @@ func atoiDefault(value string, fallback int) int {
 	}
 
 	return parsed
+}
+
+type demoVersion struct {
+	raw            string
+	major          int
+	minor          int
+	patch          int
+	commitCount    int
+	hasCommitCount bool
+}
+
+const obituaryHeadshotSupportCommitCount = 173
+
+func (p *parser) maybeWarnAboutObituaryHeadshotSupport() {
+	if p.warn == nil || p.warnedAboutObituaryHeadshotSupport {
+		return
+	}
+
+	version, ok := parseDemoVersionFromConfigStrings(
+		p.configStrings[csServerInfo],
+		p.configStrings[csSystemInfo],
+	)
+	if !ok || !version.predatesObituaryHeadshotSupport() {
+		return
+	}
+
+	// Exact obituary headshot flags were added in v2.83.2-173-g076d72559.
+	fmt.Fprintf(
+		p.warn,
+		"warning: %s predates obituary headshot support (%s); exact HeadshotKill output is unavailable for this demo\n",
+		p.demoPath,
+		version.raw,
+	)
+	p.warnedAboutObituaryHeadshotSupport = true
+}
+
+func parseDemoVersionFromConfigStrings(serverInfo, systemInfo string) (demoVersion, bool) {
+	if version := infoValue(serverInfo, "mod_version"); version != "" {
+		return parseDemoVersionString(version)
+	}
+
+	pakNames := infoValue(systemInfo, "sv_referencedPakNames")
+	if pakNames == "" {
+		return demoVersion{}, false
+	}
+
+	slash := strings.IndexByte(pakNames, '/')
+	if slash < 0 || slash+1 >= len(pakNames) {
+		return demoVersion{}, false
+	}
+
+	return parseDemoVersionString(pakNames[slash+1:])
+}
+
+func parseDemoVersionString(raw string) (demoVersion, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return demoVersion{}, false
+	}
+
+	start := 0
+	for start < len(raw) && (raw[start] < '0' || raw[start] > '9') {
+		start++
+	}
+	if start == len(raw) {
+		return demoVersion{}, false
+	}
+
+	version := demoVersion{raw: raw}
+	remainder := raw[start:]
+	rest, ok := parseVersionComponent(remainder, &version.major)
+	if !ok || !strings.HasPrefix(rest, ".") {
+		return demoVersion{}, false
+	}
+	rest, ok = parseVersionComponent(rest[1:], &version.minor)
+	if !ok || !strings.HasPrefix(rest, ".") {
+		return demoVersion{}, false
+	}
+	rest, ok = parseVersionComponent(rest[1:], &version.patch)
+	if !ok {
+		return demoVersion{}, false
+	}
+
+	if strings.HasPrefix(rest, "-") {
+		if parsedRest, parsed := parseVersionComponent(rest[1:], &version.commitCount); parsed {
+			version.hasCommitCount = true
+			rest = parsedRest
+		}
+	}
+
+	return version, true
+}
+
+func parseVersionComponent(input string, out *int) (string, bool) {
+	end := 0
+	for end < len(input) && input[end] >= '0' && input[end] <= '9' {
+		end++
+	}
+	if end == 0 {
+		return input, false
+	}
+
+	value, err := strconv.Atoi(input[:end])
+	if err != nil {
+		return input, false
+	}
+
+	*out = value
+	return input[end:], true
+}
+
+func (v demoVersion) predatesObituaryHeadshotSupport() bool {
+	switch {
+	case v.major < 2:
+		return true
+	case v.major > 2:
+		return false
+	case v.minor < 83:
+		return true
+	case v.minor > 83:
+		return false
+	case v.patch < 2:
+		return true
+	case v.patch > 2:
+		return false
+	case !v.hasCommitCount:
+		return true
+	default:
+		return v.commitCount < obituaryHeadshotSupportCommitCount
+	}
 }
 
 func formatMatchTimestamp(milliseconds int) string {

@@ -43,7 +43,10 @@ const (
 )
 
 const (
+	csServerInfo     = 0
+	csSystemInfo     = 1
 	csLevelStartTime = 11
+	csVersionInfo    = 30
 	csPlayers        = 689
 )
 

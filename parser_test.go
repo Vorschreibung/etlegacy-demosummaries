@@ -23,6 +23,39 @@ func TestObituaryKillLabelPadding(t *testing.T) {
 	}
 }
 
+func TestWarnWhenDemoPredatesObituaryHeadshotSupport(t *testing.T) {
+	var out bytes.Buffer
+	var warn bytes.Buffer
+
+	parser := newParserWithWarning(&out, &warn, parserOptions{})
+	parser.demoPath = "old.dm_84"
+	parser.setConfigString(csServerInfo, `\mod_version\v2.83.2-172-gdeadbeef`)
+
+	got := warn.String()
+	if !strings.Contains(got, "old.dm_84") {
+		t.Fatalf("expected warning to mention demo path, got %q", got)
+	}
+	if !strings.Contains(got, "v2.83.2-172-gdeadbeef") {
+		t.Fatalf("expected warning to mention demo version, got %q", got)
+	}
+	if !strings.Contains(got, "HeadshotKill output is unavailable") {
+		t.Fatalf("expected warning to explain missing headshot output, got %q", got)
+	}
+}
+
+func TestNoWarningWhenDemoSupportsObituaryHeadshots(t *testing.T) {
+	var out bytes.Buffer
+	var warn bytes.Buffer
+
+	parser := newParserWithWarning(&out, &warn, parserOptions{})
+	parser.demoPath = "new.dm_84"
+	parser.setConfigString(csServerInfo, `\mod_version\v2.83.2-173-g076d72559`)
+
+	if warn.Len() != 0 {
+		t.Fatalf("unexpected warning for supported demo: %q", warn.String())
+	}
+}
+
 func TestEmitKillMultiKillWindowsSeparated(t *testing.T) {
 	var out bytes.Buffer
 

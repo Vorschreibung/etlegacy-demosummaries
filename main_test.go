@@ -15,7 +15,7 @@ func TestRootCommandMultiKillsOnlyDefaultValue(t *testing.T) {
 	var gotArgs []string
 
 	command := newRootCommand(&stdout, &stderr,
-		func(_ io.Writer, options parserOptions, args []string) error {
+		func(_ io.Writer, _ io.Writer, options parserOptions, args []string) error {
 			gotOptions = options
 			gotArgs = append([]string(nil), args...)
 			return nil
@@ -40,7 +40,7 @@ func TestRootCommandMultiKillsOnlyExplicitValue(t *testing.T) {
 	var gotOptions parserOptions
 
 	command := newRootCommand(&stdout, &stderr,
-		func(_ io.Writer, options parserOptions, _ []string) error {
+		func(_ io.Writer, _ io.Writer, options parserOptions, _ []string) error {
 			gotOptions = options
 			return nil
 		})
@@ -59,7 +59,7 @@ func TestRootCommandRejectsTooSmallMultiKillMinimum(t *testing.T) {
 	var stderr bytes.Buffer
 
 	command := newRootCommand(&stdout, &stderr,
-		func(_ io.Writer, _ parserOptions, _ []string) error {
+		func(_ io.Writer, _ io.Writer, _ parserOptions, _ []string) error {
 			t.Fatal("run callback should not be called")
 			return nil
 		})
@@ -77,7 +77,7 @@ func TestRootCommandMultiKillHeadshotsOnlyDefaultValue(t *testing.T) {
 	var gotOptions parserOptions
 
 	command := newRootCommand(&stdout, &stderr,
-		func(_ io.Writer, options parserOptions, _ []string) error {
+		func(_ io.Writer, _ io.Writer, options parserOptions, _ []string) error {
 			gotOptions = options
 			return nil
 		})
@@ -96,7 +96,7 @@ func TestRootCommandRejectsConflictingMultiKillModes(t *testing.T) {
 	var stderr bytes.Buffer
 
 	command := newRootCommand(&stdout, &stderr,
-		func(_ io.Writer, _ parserOptions, _ []string) error {
+		func(_ io.Writer, _ io.Writer, _ parserOptions, _ []string) error {
 			t.Fatal("run callback should not be called")
 			return nil
 		})
@@ -114,7 +114,7 @@ func TestRootCommandKillsOnlyFrom(t *testing.T) {
 	var gotOptions parserOptions
 
 	command := newRootCommand(&stdout, &stderr,
-		func(_ io.Writer, options parserOptions, _ []string) error {
+		func(_ io.Writer, _ io.Writer, options parserOptions, _ []string) error {
 			gotOptions = options
 			return nil
 		})
