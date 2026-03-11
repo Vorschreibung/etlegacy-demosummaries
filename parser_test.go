@@ -185,3 +185,47 @@ func TestEmitKillFiltersByAttackerName(t *testing.T) {
 		t.Fatalf("unexpected filtered output: %q", got)
 	}
 }
+
+func TestEmitKillMultiKillHeadshotsOnly(t *testing.T) {
+	var out bytes.Buffer
+
+	parser := newParser(&out, parserOptions{multiKillHeadshotMin: 2})
+	parser.levelStartTime = 1000
+	parser.players[1] = playerInfo{Name: "Killer", Team: teamAxis}
+	parser.players[2] = playerInfo{Name: "VictimA", Team: teamAllies}
+	parser.players[3] = playerInfo{Name: "VictimB", Team: teamAllies}
+	parser.players[4] = playerInfo{Name: "VictimC", Team: teamAllies}
+
+	parser.emitKill(2000, &entityState{
+		Fields: [entityFieldCount]int32{
+			fieldOtherEntityNum:  2,
+			fieldOtherEntityNum2: 1,
+			fieldLoopSound:       1,
+		},
+	})
+	parser.emitKill(3000, &entityState{
+		Fields: [entityFieldCount]int32{
+			fieldOtherEntityNum:  3,
+			fieldOtherEntityNum2: 1,
+		},
+	})
+	parser.emitKill(4800, &entityState{
+		Fields: [entityFieldCount]int32{
+			fieldOtherEntityNum:  4,
+			fieldOtherEntityNum2: 1,
+			fieldLoopSound:       1,
+		},
+	})
+	parser.flushAllMultiKillWindows()
+
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected only the headshot window to print, got %d lines: %q", len(lines), out.String())
+	}
+	if lines[0] != "00:01.00 ; Killer ; VictimA ; Enemy" {
+		t.Fatalf("unexpected first headshot line: %q", lines[0])
+	}
+	if lines[1] != "00:03.80 ; Killer ; VictimC ; Enemy" {
+		t.Fatalf("unexpected second headshot line: %q", lines[1])
+	}
+}

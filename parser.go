@@ -13,8 +13,24 @@ import (
 )
 
 type parserOptions struct {
-	multiKillMin  int
-	killsOnlyFrom string
+	multiKillMin         int
+	multiKillHeadshotMin int
+	killsOnlyFrom        string
+}
+
+func (o parserOptions) multiKillThreshold() int {
+	if o.multiKillHeadshotMin > 0 {
+		return o.multiKillHeadshotMin
+	}
+	return o.multiKillMin
+}
+
+func (o parserOptions) multiKillEnabled() bool {
+	return o.multiKillThreshold() > 0
+}
+
+func (o parserOptions) multiKillHeadshotsOnly() bool {
+	return o.multiKillHeadshotMin > 0
 }
 
 type killOutput struct {
@@ -750,7 +766,7 @@ func (p *parser) emitKill(serverTime int, state *entityState) {
 	if attacker == entityNumWorld || attacker < 0 || attacker >= maxClients {
 		return
 	}
-	if p.options.multiKillMin > 0 {
+	if p.options.multiKillEnabled() {
 		p.flushExpiredMultiKillWindows(serverTime)
 	}
 
@@ -758,7 +774,10 @@ func (p *parser) emitKill(serverTime int, state *entityState) {
 	if !ok {
 		return
 	}
-	if p.options.multiKillMin > 0 && relation == "Self" {
+	if p.options.multiKillEnabled() && relation == "Self" {
+		return
+	}
+	if p.options.multiKillHeadshotsOnly() && state.Fields[fieldLoopSound] == 0 {
 		return
 	}
 
@@ -798,7 +817,7 @@ func (p *parser) killRelation(attacker, target int) (string, bool) {
 }
 
 func (p *parser) writeKill(attacker int, output killOutput) {
-	if p.options.multiKillMin == 0 {
+	if !p.options.multiKillEnabled() {
 		fmt.Fprintln(p.out, output.line)
 		return
 	}
@@ -892,7 +911,7 @@ func (p *parser) flushAllMultiKillWindows() {
 }
 
 func (p *parser) emitMultiKillWindow(window multiKillWindow) {
-	if len(window.outputs) < p.options.multiKillMin {
+	if len(window.outputs) < p.options.multiKillThreshold() {
 		return
 	}
 

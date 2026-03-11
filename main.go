@@ -29,6 +29,12 @@ func newRootCommand(stdout io.Writer, stderr io.Writer,
 			if options.multiKillMin != 0 && options.multiKillMin < 2 {
 				return fmt.Errorf("--multikills-only must be at least 2 when set")
 			}
+			if options.multiKillHeadshotMin != 0 && options.multiKillHeadshotMin < 2 {
+				return fmt.Errorf("--multikill-headshots-only must be at least 2 when set")
+			}
+			if options.multiKillMin != 0 && options.multiKillHeadshotMin != 0 {
+				return fmt.Errorf("--multikills-only and --multikill-headshots-only are mutually exclusive")
+			}
 			if options.killsOnlyFrom != "" {
 				options.killsOnlyFrom = cleanName(options.killsOnlyFrom)
 				if options.killsOnlyFrom == "" {
@@ -47,6 +53,9 @@ func newRootCommand(stdout io.Writer, stderr io.Writer,
 	flags.IntVar(&options.multiKillMin, "multikills-only", 0,
 		"only print multikill windows; when used without a value, require at least 2 kills per window")
 	flags.Lookup("multikills-only").NoOptDefVal = "2"
+	flags.IntVar(&options.multiKillHeadshotMin, "multikill-headshots-only", 0,
+		"only print multikill windows made of headshot kills; when used without a value, require at least 2 kills per window")
+	flags.Lookup("multikill-headshots-only").NoOptDefVal = "2"
 	flags.StringVar(&options.killsOnlyFrom, "kills-only-from", "",
 		"only print kills from the given cleaned player name")
 

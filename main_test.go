@@ -70,6 +70,43 @@ func TestRootCommandRejectsTooSmallMultiKillMinimum(t *testing.T) {
 	}
 }
 
+func TestRootCommandMultiKillHeadshotsOnlyDefaultValue(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	var gotOptions parserOptions
+
+	command := newRootCommand(&stdout, &stderr,
+		func(_ io.Writer, options parserOptions, _ []string) error {
+			gotOptions = options
+			return nil
+		})
+	command.SetArgs([]string{"--multikill-headshots-only", "demo.dm_84"})
+
+	if err := command.Execute(); err != nil {
+		t.Fatalf("execute failed: %v", err)
+	}
+	if gotOptions.multiKillHeadshotMin != 2 {
+		t.Fatalf("expected default headshot multikill minimum 2, got %d", gotOptions.multiKillHeadshotMin)
+	}
+}
+
+func TestRootCommandRejectsConflictingMultiKillModes(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	command := newRootCommand(&stdout, &stderr,
+		func(_ io.Writer, _ parserOptions, _ []string) error {
+			t.Fatal("run callback should not be called")
+			return nil
+		})
+	command.SetArgs([]string{"--multikills-only", "--multikill-headshots-only", "demo.dm_84"})
+
+	if err := command.Execute(); err == nil {
+		t.Fatal("expected validation error for conflicting multikill modes")
+	}
+}
+
 func TestRootCommandKillsOnlyFrom(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

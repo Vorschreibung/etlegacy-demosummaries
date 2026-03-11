@@ -68,6 +68,7 @@ const (
 	fieldEntityType      = 0
 	fieldOtherEntityNum  = 34
 	fieldOtherEntityNum2 = 35
+	fieldLoopSound       = 37
 )
 
 var entityFieldBits = [entityFieldCount]int{
