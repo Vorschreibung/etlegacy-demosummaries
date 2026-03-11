@@ -720,37 +720,40 @@ func (p *parser) emitKill(serverTime int, state *entityState) {
 
 	attacker := int(state.Fields[fieldOtherEntityNum2])
 	timestamp := formatMatchTimestamp(serverTime - p.levelStartTime)
-	targetName := p.playerName(target)
-
-	switch {
-	case attacker == entityNumWorld || attacker < 0 || attacker >= maxClients:
-		fmt.Fprintf(p.out, "%s ; World killed %s ; World\n", timestamp, targetName)
-	case attacker == target:
-		fmt.Fprintf(p.out, "%s ; %s killed %s ; Self\n", timestamp, targetName, targetName)
-	default:
-		attackerName := p.playerName(attacker)
-		fmt.Fprintf(p.out, "%s ; %s killed %s ; %s\n",
-			timestamp,
-			attackerName,
-			targetName,
-			p.killRelation(attacker, target),
-		)
+	if attacker == entityNumWorld || attacker < 0 || attacker >= maxClients {
+		return
 	}
+
+	relation, ok := p.killRelation(attacker, target)
+	if !ok {
+		return
+	}
+
+	fmt.Fprintf(p.out, "%s ; %s ; %s ; %s\n",
+		timestamp,
+		p.playerName(attacker),
+		p.playerName(target),
+		relation,
+	)
 }
 
-func (p *parser) killRelation(attacker, target int) string {
+func (p *parser) killRelation(attacker, target int) (string, bool) {
+	if attacker == target {
+		return "Self", true
+	}
+
 	attackerTeam := p.players[attacker].Team
 	targetTeam := p.players[target].Team
 
 	if (attackerTeam == teamAxis || attackerTeam == teamAllies) &&
 		(targetTeam == teamAxis || targetTeam == teamAllies) {
 		if attackerTeam == targetTeam {
-			return "Teammate"
+			return "Teammate", true
 		}
-		return "Enemy"
+		return "Enemy", true
 	}
 
-	return "Unknown"
+	return "", false
 }
 
 func (p *parser) handleServerCommand(command string) {
@@ -945,9 +948,9 @@ func formatMatchTimestamp(milliseconds int) string {
 
 	minutes := milliseconds / 60000
 	seconds := (milliseconds / 1000) % 60
-	remainder := milliseconds % 1000
+	centiseconds := (milliseconds % 1000) / 10
 
-	return fmt.Sprintf("%02d:%02d.%03d", minutes, seconds, remainder)
+	return fmt.Sprintf("%02d:%02d.%02d", minutes, seconds, centiseconds)
 }
 
 func mathFloat32bits(value float32) uint32 {
