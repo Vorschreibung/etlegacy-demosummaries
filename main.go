@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -65,14 +67,64 @@ func newRootCommand(stdout io.Writer, stderr io.Writer,
 }
 
 func runParser(out io.Writer, warn io.Writer, options parserOptions, paths []string) error {
+	outputDir, err := executableOutputDir()
+	if err != nil {
+		return err
+	}
+
+	return runParserInOutputDir(out, warn, options, paths, outputDir)
+}
+
+func runParserInOutputDir(out io.Writer, warn io.Writer, options parserOptions, paths []string, outputDir string) error {
 	for _, path := range paths {
-		parser := newParserWithWarning(out, warn, options)
+		logPath := demoLogPath(outputDir, path)
+		logFile, err := os.Create(logPath)
+		if err != nil {
+			return fmt.Errorf("%s: create %s: %w", path, logPath, err)
+		}
+
+		demoOut := io.MultiWriter(out, logFile)
+		if _, err := fmt.Fprintf(demoOut, "--- START - %s ---\n", path); err != nil {
+			_ = logFile.Close()
+			return fmt.Errorf("%s: write %s: %w", path, logPath, err)
+		}
+
+		parser := newParserWithWarning(demoOut, warn, options)
 		if err := parser.parseFile(path); err != nil {
+			_ = logFile.Close()
 			return fmt.Errorf("%s: %w", path, err)
+		}
+
+		if _, err := fmt.Fprintf(demoOut, "---  END  - %s ---\n", path); err != nil {
+			_ = logFile.Close()
+			return fmt.Errorf("%s: write %s: %w", path, logPath, err)
+		}
+
+		if err := logFile.Close(); err != nil {
+			return fmt.Errorf("%s: close %s: %w", path, logPath, err)
 		}
 	}
 
 	return nil
+}
+
+func executableOutputDir() (string, error) {
+	executablePath, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("resolve executable path: %w", err)
+	}
+
+	return filepath.Dir(executablePath), nil
+}
+
+func demoLogPath(outputDir string, demoPath string) string {
+	base := filepath.Base(demoPath)
+	ext := filepath.Ext(base)
+	if ext != "" {
+		base = strings.TrimSuffix(base, ext)
+	}
+
+	return filepath.Join(outputDir, "log-"+base+".txt")
 }
 
 func normalizeOptionalIntFlags(args []string) []string {
