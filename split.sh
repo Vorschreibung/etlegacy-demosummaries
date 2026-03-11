@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Split the demoparser subtree, preserving its history, into a standalone repo.
-prefix="misc/demoparser"
+# Split the etlegacy-demosummaries subtree, preserving its history, into a standalone repo.
+prefix="misc/etlegacy-demosummaries"
 target_dir="${1:-$HOME/workspace/etlegacy-demosummaries}"
 
 source_root="$(git rev-parse --show-toplevel)"

@@ -26,7 +26,7 @@ func newRootCommand(stdout io.Writer, stderr io.Writer,
 	options := parserOptions{}
 
 	command := &cobra.Command{
-		Use:          "demoparser <demo.dm_84> [more demos...]",
+		Use:          "etlegacy-demosummaries <demo.dm_84> [more demos...]",
 		Short:        "Parse ET .dm_84 demos and print kill lines",
 		SilenceUsage: true,
 		Args:         cobra.MinimumNArgs(1),

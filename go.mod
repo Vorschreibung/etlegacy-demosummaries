@@ -1,4 +1,4 @@
-module demoparser
+module etlegacy-demosummaries
 
 go 1.22
 
