@@ -10,10 +10,11 @@ import (
 )
 
 type splitOptions struct {
-	minimum    int
-	beforeSecs int
-	afterSecs  int
-	fromMe     bool
+	minimum         int
+	multiKillWindow int
+	beforeSecs      int
+	afterSecs       int
+	fromMe          bool
 }
 
 type detectedMultiKillWindow struct {
@@ -79,7 +80,10 @@ func runSplitMultikill(out io.Writer, _ io.Writer, options splitOptions, paths [
 
 func collectMultiKillWindows(path string, options splitOptions) ([]detectedMultiKillWindow, error) {
 	windows := make([]detectedMultiKillWindow, 0, 8)
-	parser := newParser(io.Discard, parserOptions{multiKillMin: options.minimum})
+	parser := newParser(io.Discard, parserOptions{
+		multiKillMin:    options.minimum,
+		multiKillWindow: options.multiKillWindow,
+	})
 	parser.onMultiKillWindow = func(window multiKillWindow) {
 		if len(window.outputs) == 0 {
 			return

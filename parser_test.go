@@ -201,6 +201,43 @@ func TestEmitKillMultiKillMinimumFiltersShortWindows(t *testing.T) {
 	}
 }
 
+func TestEmitKillMultiKillWindowConfigurable(t *testing.T) {
+	var out bytes.Buffer
+
+	parser := newParser(&out, parserOptions{multiKillMin: 2, multiKillWindow: 4})
+	parser.levelStartTime = 1000
+	parser.players[1] = playerInfo{Name: "Killer", Team: teamAxis}
+	parser.players[2] = playerInfo{Name: "VictimA", Team: teamAllies}
+	parser.players[3] = playerInfo{Name: "VictimB", Team: teamAllies}
+
+	parser.emitKill(2000, &entityState{
+		Fields: [entityFieldCount]int32{
+			fieldOtherEntityNum:  2,
+			fieldOtherEntityNum2: 1,
+			fieldWeapon:          weaponMP40,
+		},
+	})
+	parser.emitKill(5500, &entityState{
+		Fields: [entityFieldCount]int32{
+			fieldOtherEntityNum:  3,
+			fieldOtherEntityNum2: 1,
+			fieldWeapon:          weaponMP40,
+		},
+	})
+	parser.flushAllMultiKillWindows()
+
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected a 2-kill window with custom timing, got %d lines: %q", len(lines), out.String())
+	}
+	if lines[0] != expectedKillLine("00:01.00", false, "Killer", "MP40", "VictimA", "Enemy") {
+		t.Fatalf("unexpected first printed line: %q", lines[0])
+	}
+	if lines[1] != expectedKillLine("00:04.50", false, "Killer", "MP40", "VictimB", "Enemy") {
+		t.Fatalf("unexpected second printed line: %q", lines[1])
+	}
+}
+
 func TestEmitKillSelfMultiKillClassification(t *testing.T) {
 	var out bytes.Buffer
 

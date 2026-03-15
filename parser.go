@@ -16,6 +16,7 @@ import (
 type parserOptions struct {
 	multiKillMin         int
 	multiKillHeadshotMin int
+	multiKillWindow      int
 	killsOnlyFrom        string
 }
 
@@ -32,6 +33,13 @@ func (o parserOptions) multiKillEnabled() bool {
 
 func (o parserOptions) multiKillHeadshotsOnly() bool {
 	return o.multiKillHeadshotMin > 0
+}
+
+func (o parserOptions) multiKillWindowMs() int {
+	if o.multiKillWindow <= 0 {
+		return 3000
+	}
+	return o.multiKillWindow * 1000
 }
 
 type killOutput struct {
@@ -1129,7 +1137,7 @@ func (p *parser) writeKill(attacker int, output killOutput) {
 	}
 
 	lastOutput := window.outputs[len(window.outputs)-1]
-	if output.serverTime-lastOutput.serverTime > 3000 {
+	if output.serverTime-lastOutput.serverTime > p.options.multiKillWindowMs() {
 		window.outputs = append(window.outputs[:0], output)
 		return
 	}
@@ -1151,7 +1159,7 @@ func (p *parser) flushExpiredMultiKillWindows(currentTime int) {
 		}
 
 		lastOutput := window.outputs[len(window.outputs)-1]
-		if currentTime-lastOutput.serverTime > 3000 {
+		if currentTime-lastOutput.serverTime > p.options.multiKillWindowMs() {
 			expired = append(expired, windowEntry{
 				attacker: attacker,
 				window:   window,

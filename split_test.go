@@ -135,6 +135,73 @@ func TestSplitMultikillTVCreatesParseableClip(t *testing.T) {
 	}
 }
 
+func TestSplitMultikillWindowFlagControlsGrouping(t *testing.T) {
+	tempDir := t.TempDir()
+	demoPath := filepath.Join(tempDir, "demo.dm_84")
+	writeSyntheticDemo(t, demoPath, 1, []syntheticSnapshot{
+		{serverTime: 1000},
+		{serverTime: 5000, entities: []entityState{makeObituaryEntity(200, 1, 2)}},
+		{serverTime: 8500, entities: []entityState{makeObituaryEntity(201, 1, 3)}},
+	})
+
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("change working directory: %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(originalDir); err != nil {
+			t.Fatalf("restore working directory: %v", err)
+		}
+	}()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	command := newRootCommand(&stdout, &stderr, runParser)
+	command.SetArgs([]string{
+		"split-multikill",
+		"--before", "0",
+		"--after", "0",
+		demoPath,
+	})
+
+	if err := command.Execute(); err != nil {
+		t.Fatalf("execute default split-multikill: %v", err)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("unexpected stderr: %q", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "no multikills found") {
+		t.Fatalf("expected default window to reject the multikill, got %q", stdout.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	command = newRootCommand(&stdout, &stderr, runParser)
+	command.SetArgs([]string{
+		"split-multikill",
+		"--multikill-window", "4",
+		"--before", "0",
+		"--after", "0",
+		demoPath,
+	})
+
+	if err := command.Execute(); err != nil {
+		t.Fatalf("execute split-multikill with custom window: %v", err)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("unexpected stderr: %q", stderr.String())
+	}
+
+	clipPath := filepath.Join(tempDir, "demo_00_00_04_killer_2kills.dm_84")
+	if _, err := os.Stat(clipPath); err != nil {
+		t.Fatalf("expected clip %s: %v\nstdout: %s", clipPath, err, stdout.String())
+	}
+}
+
 func TestSplitMultikillsFromMeOnlyCreatesRecorderClips(t *testing.T) {
 	tempDir := t.TempDir()
 	demoPath := filepath.Join(tempDir, "demo.dm_84")

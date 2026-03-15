@@ -2,5 +2,8 @@ etlegacy-demosummaries
 etlegacy-demosummaries.exe
 log-*.txt
 
+*.dm_84
+*.tv_84
+
 /.pixi/
 /bin/

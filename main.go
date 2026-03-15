@@ -13,17 +13,38 @@ import (
 )
 
 func main() {
-	command := newRootCommand(os.Stdout, os.Stderr, runParser)
-	command.SetArgs(normalizeOptionalIntFlags(os.Args[1:]))
-	if err := command.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	if err := executeCLI(os.Stdout, os.Stderr, os.Args[1:], runParser); err != nil {
 		os.Exit(1)
 	}
 }
 
+func executeCLI(stdout io.Writer, stderr io.Writer, args []string,
+	run func(io.Writer, io.Writer, parserOptions, []string) error) error {
+	command := newRootCommand(stdout, stderr, run)
+	command.SetArgs(normalizeOptionalIntFlags(args))
+
+	executed, err := command.ExecuteC()
+	if err == nil {
+		return nil
+	}
+
+	fmt.Fprintln(stderr, err)
+
+	helpCommand := executed
+	if helpCommand == nil {
+		helpCommand = command
+	}
+	helpCommand.SetOut(stderr)
+	if helpErr := helpCommand.Help(); helpErr != nil {
+		return fmt.Errorf("%w: show help: %v", err, helpErr)
+	}
+
+	return err
+}
+
 func newRootCommand(stdout io.Writer, stderr io.Writer,
 	run func(io.Writer, io.Writer, parserOptions, []string) error) *cobra.Command {
-	options := parserOptions{}
+	options := parserOptions{multiKillWindow: 3}
 
 	command := &cobra.Command{
 		Use:          "etlegacy-demosummaries [flags] <demo.dm_84|demo.tv_84> [more demos...]",
@@ -36,6 +57,9 @@ func newRootCommand(stdout io.Writer, stderr io.Writer,
 			}
 			if options.multiKillHeadshotMin != 0 && options.multiKillHeadshotMin < 2 {
 				return fmt.Errorf("--multikill-headshots-only must be at least 2 when set")
+			}
+			if options.multiKillWindow < 1 {
+				return fmt.Errorf("--multikill-window must be at least 1")
 			}
 			if options.multiKillMin != 0 && options.multiKillHeadshotMin != 0 {
 				return fmt.Errorf("--multikills-only and --multikill-headshots-only are mutually exclusive")
@@ -61,6 +85,8 @@ func newRootCommand(stdout io.Writer, stderr io.Writer,
 	flags.IntVar(&options.multiKillHeadshotMin, "multikill-headshots-only", 0,
 		"only print multikill windows made of headshot kills; when used without a value, require at least 2 kills per window")
 	flags.Lookup("multikill-headshots-only").NoOptDefVal = "2"
+	flags.IntVar(&options.multiKillWindow, "multikill-window", options.multiKillWindow,
+		"seconds allowed between kills for them to count as the same multikill window")
 	flags.StringVar(&options.killsOnlyFrom, "kills-only-from", "",
 		"only print kills from the given cleaned player name")
 
@@ -71,9 +97,10 @@ func newRootCommand(stdout io.Writer, stderr io.Writer,
 
 func newSplitMultikillCommand(stdout io.Writer, stderr io.Writer) *cobra.Command {
 	options := splitOptions{
-		minimum:    2,
-		beforeSecs: 5,
-		afterSecs:  5,
+		minimum:         2,
+		multiKillWindow: 3,
+		beforeSecs:      5,
+		afterSecs:       5,
 	}
 
 	command := &cobra.Command{
@@ -85,6 +112,9 @@ func newSplitMultikillCommand(stdout io.Writer, stderr io.Writer) *cobra.Command
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if options.minimum < 2 {
 				return fmt.Errorf("--minimum must be at least 2")
+			}
+			if options.multiKillWindow < 1 {
+				return fmt.Errorf("--multikill-window must be at least 1")
 			}
 			if options.beforeSecs < 0 {
 				return fmt.Errorf("--before must be non-negative")
@@ -102,7 +132,9 @@ func newSplitMultikillCommand(stdout io.Writer, stderr io.Writer) *cobra.Command
 
 	flags := command.Flags()
 	flags.IntVar(&options.minimum, "minimum", options.minimum,
-		"minimum kills required inside the 3 second multikill window")
+		"minimum kills required inside the multikill window")
+	flags.IntVar(&options.multiKillWindow, "multikill-window", options.multiKillWindow,
+		"seconds allowed between kills for them to count as the same multikill window")
 	flags.IntVar(&options.beforeSecs, "before", options.beforeSecs,
 		"seconds to include before the multikill window")
 	flags.IntVar(&options.afterSecs, "after", options.afterSecs,

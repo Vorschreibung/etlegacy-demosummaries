@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -36,6 +37,26 @@ func TestRootCommandMultiKillsOnlyDefaultValue(t *testing.T) {
 	}
 }
 
+func TestExecuteCLIShowsHelpOnInvalidOptions(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	err := executeCLI(&stdout, &stderr, []string{"--definitely-not-a-flag"},
+		func(_ io.Writer, _ io.Writer, _ parserOptions, _ []string) error {
+			t.Fatal("run callback should not be called")
+			return nil
+		})
+	if err == nil {
+		t.Fatal("expected invalid CLI options to return an error")
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected no stdout output, got %q", stdout.String())
+	}
+	if got := stderr.String(); !strings.Contains(got, "unknown flag") || !strings.Contains(got, "Usage:") {
+		t.Fatalf("expected stderr to include the error and help text, got %q", got)
+	}
+}
+
 func TestRootCommandMultiKillsOnlyExplicitValue(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -54,6 +75,48 @@ func TestRootCommandMultiKillsOnlyExplicitValue(t *testing.T) {
 	}
 	if gotOptions.multiKillMin != 3 {
 		t.Fatalf("expected explicit multikill minimum 3, got %d", gotOptions.multiKillMin)
+	}
+}
+
+func TestRootCommandMultiKillWindowDefaultValue(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	var gotOptions parserOptions
+
+	command := newRootCommand(&stdout, &stderr,
+		func(_ io.Writer, _ io.Writer, options parserOptions, _ []string) error {
+			gotOptions = options
+			return nil
+		})
+	command.SetArgs(normalizeOptionalIntFlags([]string{"demo.dm_84"}))
+
+	if err := command.Execute(); err != nil {
+		t.Fatalf("execute failed: %v", err)
+	}
+	if gotOptions.multiKillWindow != 3 {
+		t.Fatalf("expected default multikill window 3, got %d", gotOptions.multiKillWindow)
+	}
+}
+
+func TestRootCommandMultiKillWindowExplicitValue(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	var gotOptions parserOptions
+
+	command := newRootCommand(&stdout, &stderr,
+		func(_ io.Writer, _ io.Writer, options parserOptions, _ []string) error {
+			gotOptions = options
+			return nil
+		})
+	command.SetArgs(normalizeOptionalIntFlags([]string{"--multikill-window", "5", "demo.dm_84"}))
+
+	if err := command.Execute(); err != nil {
+		t.Fatalf("execute failed: %v", err)
+	}
+	if gotOptions.multiKillWindow != 5 {
+		t.Fatalf("expected explicit multikill window 5, got %d", gotOptions.multiKillWindow)
 	}
 }
 
