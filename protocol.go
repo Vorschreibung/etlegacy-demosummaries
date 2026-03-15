@@ -184,6 +184,8 @@ type snapshotState struct {
 	MessageNum       int
 	DeltaNum         int
 	ServerTime       int
+	SnapFlags        int
+	AreaMask         []byte
 	ParseEntitiesNum int
 	NumEntities      int
 	PlayerState      playerState

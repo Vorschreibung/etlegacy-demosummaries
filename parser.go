@@ -34,8 +34,11 @@ func (o parserOptions) multiKillHeadshotsOnly() bool {
 }
 
 type killOutput struct {
-	serverTime int
-	line       string
+	serverTime   int
+	matchTimeMs  int
+	attackerNum  int
+	attackerName string
+	line         string
 }
 
 const (
@@ -63,6 +66,8 @@ type parser struct {
 	warnedAboutObituaryHeadshotSupport bool
 
 	serverCommandSequence int
+	clientNum             int
+	checksumFeed          int
 	levelStartTime        int
 	bigConfig             string
 
@@ -84,6 +89,9 @@ type parser struct {
 	pendingKillActive          [maxClients]bool
 	multiKillWindowSortScratch []windowEntry
 
+	onSnapshot        func(*parser, *snapshotState) error
+	onMultiKillWindow func(multiKillWindow)
+
 	printedMultiKillWindow bool
 }
 
@@ -104,6 +112,8 @@ func newParserWithWarning(out io.Writer, warn io.Writer, options parserOptions) 
 
 func (p *parser) resetState() {
 	p.serverCommandSequence = 0
+	p.clientNum = 0
+	p.checksumFeed = 0
 	p.levelStartTime = 0
 	p.bigConfig = ""
 	p.configStrings = [maxConfigStrings]string{}
@@ -278,12 +288,16 @@ func (p *parser) parseGamestate(msg *msgReader) error {
 		}
 	}
 
-	if _, err := msg.readLong(); err != nil {
+	clientNum, err := msg.readLong()
+	if err != nil {
 		return fmt.Errorf("read gamestate client num: %w", err)
 	}
-	if _, err := msg.readLong(); err != nil {
+	checksumFeed, err := msg.readLong()
+	if err != nil {
 		return fmt.Errorf("read gamestate checksum feed: %w", err)
 	}
+	p.clientNum = clientNum
+	p.checksumFeed = checksumFeed
 
 	return nil
 }
@@ -315,9 +329,11 @@ func (p *parser) parseSnapshot(sequence int, msg *msgReader) error {
 		}
 	}
 
-	if _, err := msg.readByte(); err != nil {
+	snapFlags, err := msg.readByte()
+	if err != nil {
 		return fmt.Errorf("read snapshot flags: %w", err)
 	}
+	snap.SnapFlags = snapFlags
 
 	areaMaskLen, err := msg.readByte()
 	if err != nil {
@@ -326,8 +342,13 @@ func (p *parser) parseSnapshot(sequence int, msg *msgReader) error {
 	if areaMaskLen < 0 {
 		return fmt.Errorf("invalid areamask length %d", areaMaskLen)
 	}
-	if err := msg.skipBytes(areaMaskLen); err != nil {
-		return fmt.Errorf("read areamask: %w", err)
+	snap.AreaMask = make([]byte, areaMaskLen)
+	for i := range snap.AreaMask {
+		value, err := msg.readByte()
+		if err != nil {
+			return fmt.Errorf("read areamask: %w", err)
+		}
+		snap.AreaMask[i] = byte(value)
 	}
 
 	if old != nil {
@@ -348,6 +369,11 @@ func (p *parser) parseSnapshot(sequence int, msg *msgReader) error {
 	}
 
 	p.snapshots[snap.MessageNum&packetMask] = snap
+	if p.onSnapshot != nil {
+		if err := p.onSnapshot(p, &snap); err != nil {
+			return err
+		}
+	}
 	p.emitSnapshotKills(&snap)
 
 	return nil
@@ -830,7 +856,10 @@ func (p *parser) emitKill(serverTime int, state *entityState) {
 	weaponName := obituaryWeaponName(int(state.Fields[fieldWeapon]))
 
 	p.writeKill(attacker, killOutput{
-		serverTime: serverTime,
+		serverTime:   serverTime,
+		matchTimeMs:  serverTime - p.levelStartTime,
+		attackerNum:  attacker,
+		attackerName: attackerName,
 		line: fmt.Sprintf("%s ; %s ; %s ; %s ; %s ; %s",
 			timestamp,
 			obituaryKillLabel(headshot),
@@ -963,6 +992,10 @@ func (p *parser) flushAllMultiKillWindows() {
 func (p *parser) emitMultiKillWindow(window multiKillWindow) {
 	if len(window.outputs) < p.options.multiKillThreshold() {
 		return
+	}
+
+	if p.onMultiKillWindow != nil {
+		p.onMultiKillWindow(window)
 	}
 
 	if p.printedMultiKillWindow {
