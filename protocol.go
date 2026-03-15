@@ -40,6 +40,8 @@ const (
 	svcDownload
 	svcSnapshot
 	svcEOF
+	svcETTVPlayerstates
+	svcETTVCurrentstate
 )
 
 const (
@@ -63,9 +65,12 @@ const (
 )
 
 const (
-	entityFieldCount      = 71
-	playerStateFieldCount = 77
+	entityFieldCount       = 71
+	entitySharedFieldCount = 14
+	playerStateFieldCount  = 77
 )
+
+const entitySharedMagic = 0x77
 
 const (
 	fieldEntityType      = 0
@@ -87,6 +92,15 @@ var entityFieldBits = [entityFieldCount]int{
 	32, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 10, 10, 8, 32, 32,
 	9, 9, 16, 8, 24, 10, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 16, 8, 10, 10,
 	10, 32, 32, 32, 8, 8, 32, 32, 32, 4, 2,
+}
+
+var entitySharedFieldBits = [entitySharedFieldCount]int{
+	0, 0, 0,
+	0, 0, 0,
+	32,
+	0, 0, 0,
+	0, 0, 0,
+	8,
 }
 
 var playerStateFieldBits = [playerStateFieldCount]int{
@@ -167,6 +181,13 @@ type entityState struct {
 	Fields [entityFieldCount]int32
 }
 
+// entitySharedState stores the ETTV entityShared_t delta fields in network order.
+// Float fields are stored as their IEEE-754 bit pattern.
+type entitySharedState struct {
+	Linked bool
+	Fields [entitySharedFieldCount]int32
+}
+
 // playerState stores the raw networked state so later delta snapshots can be
 // decoded with the same source data the client uses.
 type playerState struct {
@@ -179,6 +200,11 @@ type playerState struct {
 	AmmoClip   [maxAmmoGroups * ammoPerGroup]int32
 }
 
+type ettvPlayerState struct {
+	Valid bool
+	State playerState
+}
+
 type snapshotState struct {
 	Valid            bool
 	MessageNum       int
@@ -189,4 +215,5 @@ type snapshotState struct {
 	ParseEntitiesNum int
 	NumEntities      int
 	PlayerState      playerState
+	PlayerStates     [maxClients]ettvPlayerState
 }

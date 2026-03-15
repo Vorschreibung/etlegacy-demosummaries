@@ -275,6 +275,112 @@ func writeDeltaEntity(msg *msgWriter, from *entityState, to *entityState, force 
 	return nil
 }
 
+func writeDeltaEntityShared(msg *msgWriter, from *entitySharedState, to *entitySharedState, force bool) error {
+	var empty entitySharedState
+	if from == nil {
+		from = &empty
+	}
+
+	if err := msg.writeByte(entitySharedMagic); err != nil {
+		return err
+	}
+
+	if to == nil {
+		return msg.writeBits(1, 1)
+	}
+
+	lastChanged := 0
+	for i := range to.Fields {
+		if from.Fields[i] != to.Fields[i] {
+			lastChanged = i + 1
+		}
+	}
+
+	if lastChanged == 0 {
+		if !force {
+			return nil
+		}
+		if err := msg.writeBits(0, 1); err != nil {
+			return err
+		}
+		return msg.writeBits(0, 1)
+	}
+
+	if err := msg.writeBits(0, 1); err != nil {
+		return err
+	}
+	if err := msg.writeBits(1, 1); err != nil {
+		return err
+	}
+	if err := msg.writeByte(lastChanged); err != nil {
+		return err
+	}
+
+	for i := 0; i < lastChanged; i++ {
+		if from.Fields[i] == to.Fields[i] {
+			if err := msg.writeBits(0, 1); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if err := msg.writeBits(1, 1); err != nil {
+			return err
+		}
+
+		bits := entitySharedFieldBits[i]
+		if bits == 0 {
+			fullFloat := math.Float32frombits(uint32(to.Fields[i]))
+			trunc := int(fullFloat)
+			if fullFloat == 0 {
+				if err := msg.writeBits(0, 1); err != nil {
+					return err
+				}
+				continue
+			}
+
+			if err := msg.writeBits(1, 1); err != nil {
+				return err
+			}
+			if float32(trunc) == fullFloat &&
+				trunc+floatIntBias >= 0 &&
+				trunc+floatIntBias < (1<<floatIntBits) {
+				if err := msg.writeBits(0, 1); err != nil {
+					return err
+				}
+				if err := msg.writeBits(int32(trunc+floatIntBias), floatIntBits); err != nil {
+					return err
+				}
+				continue
+			}
+
+			if err := msg.writeBits(1, 1); err != nil {
+				return err
+			}
+			if err := msg.writeBits(to.Fields[i], 32); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if to.Fields[i] == 0 {
+			if err := msg.writeBits(0, 1); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if err := msg.writeBits(1, 1); err != nil {
+			return err
+		}
+		if err := msg.writeBits(to.Fields[i], bits); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func writeDeltaPlayerState(msg *msgWriter, from *playerState, to *playerState) error {
 	var empty playerState
 	if from == nil {
@@ -509,9 +615,10 @@ func encodeGamestate(p *parser) ([]byte, error) {
 	}
 
 	var empty entityState
+	var emptyShared entitySharedState
 	for index := range p.baselines {
 		baseline := &p.baselines[index]
-		if baseline.Number == 0 {
+		if !hasEntityState(baseline) {
 			continue
 		}
 		if err := msg.writeByte(svcBaseline); err != nil {
@@ -519,6 +626,29 @@ func encodeGamestate(p *parser) ([]byte, error) {
 		}
 		if err := writeDeltaEntity(msg, &empty, baseline, true); err != nil {
 			return nil, err
+		}
+		if p.isTVDemo {
+			if err := writeDeltaEntityShared(msg, &emptyShared, &p.baselinesShared[index], true); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	if p.isTVDemo {
+		for index := range p.currentStates {
+			shared := &p.currentStatesShared[index]
+			if !shared.Linked {
+				continue
+			}
+			if err := msg.writeByte(svcETTVCurrentstate); err != nil {
+				return nil, err
+			}
+			if err := writeDeltaEntity(msg, &p.baselines[index], &p.currentStates[index], true); err != nil {
+				return nil, err
+			}
+			if err := writeDeltaEntityShared(msg, &p.baselinesShared[index], shared, true); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -570,15 +700,58 @@ func encodeSnapshot(p *parser, snap *snapshotState) ([]byte, error) {
 		if err := writeDeltaEntity(msg, &p.baselines[state.Number], state, true); err != nil {
 			return nil, err
 		}
+		if p.isTVDemo {
+			shared := &p.parseEntitiesShared[(snap.ParseEntitiesNum+i)&(maxParseEntities-1)]
+			if err := writeDeltaEntityShared(msg, &p.baselinesShared[state.Number], shared, true); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if err := msg.writeBits(removedEntityNum, gentityNumBits); err != nil {
 		return nil, err
+	}
+	if p.isTVDemo {
+		if err := writeETTVPlayerStates(msg, snap); err != nil {
+			return nil, err
+		}
 	}
 	if err := msg.writeByte(svcEOF); err != nil {
 		return nil, err
 	}
 
 	return msg.bytes(), nil
+}
+
+func writeETTVPlayerStates(msg *msgWriter, snap *snapshotState) error {
+	if err := msg.writeByte(svcETTVPlayerstates); err != nil {
+		return err
+	}
+
+	for clientNum, entry := range snap.PlayerStates {
+		if !entry.Valid {
+			continue
+		}
+		if err := msg.writeByte(clientNum); err != nil {
+			return err
+		}
+		if err := writeDeltaPlayerState(msg, nil, &entry.State); err != nil {
+			return err
+		}
+	}
+
+	return msg.writeByte(255)
+}
+
+func hasEntityState(state *entityState) bool {
+	if state.Number != 0 {
+		return true
+	}
+	for _, value := range state.Fields {
+		if value != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func (w *demoFileWriter) writeGamestate(p *parser) error {

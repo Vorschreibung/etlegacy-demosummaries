@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -63,6 +64,7 @@ type parser struct {
 	options parserOptions
 
 	demoPath                           string
+	isTVDemo                           bool
 	warnedAboutObituaryHeadshotSupport bool
 
 	serverCommandSequence int
@@ -74,10 +76,14 @@ type parser struct {
 	configStrings [maxConfigStrings]string
 	players       [maxClients]playerInfo
 
-	baselines        [maxGentities]entityState
-	parseEntities    [maxParseEntities]entityState
-	parseEntitiesNum int
-	snapshots        [packetBackup]snapshotState
+	baselines           [maxGentities]entityState
+	baselinesShared     [maxGentities]entitySharedState
+	currentStates       [maxGentities]entityState
+	currentStatesShared [maxGentities]entitySharedState
+	parseEntities       [maxParseEntities]entityState
+	parseEntitiesShared [maxParseEntities]entitySharedState
+	parseEntitiesNum    int
+	snapshots           [packetBackup]snapshotState
 
 	// Temp event entities stay around for a few snapshots. Track them in fixed
 	// arrays keyed by entity number to avoid per-snapshot map churn.
@@ -119,7 +125,11 @@ func (p *parser) resetState() {
 	p.configStrings = [maxConfigStrings]string{}
 	p.players = [maxClients]playerInfo{}
 	p.baselines = [maxGentities]entityState{}
+	p.baselinesShared = [maxGentities]entitySharedState{}
+	p.currentStates = [maxGentities]entityState{}
+	p.currentStatesShared = [maxGentities]entitySharedState{}
 	p.parseEntities = [maxParseEntities]entityState{}
+	p.parseEntitiesShared = [maxParseEntities]entitySharedState{}
 	p.parseEntitiesNum = 0
 	p.snapshots = [packetBackup]snapshotState{}
 	p.activeTempEntities = [maxGentities]bool{}
@@ -134,6 +144,7 @@ func (p *parser) resetState() {
 
 func (p *parser) parseFile(path string) error {
 	p.demoPath = path
+	p.isTVDemo = isTVDemoPath(path)
 
 	file, err := os.Open(path)
 	if err != nil {
@@ -181,6 +192,7 @@ func (p *parser) parseFile(path string) error {
 
 func (p *parser) parsePacket(sequence int, data []byte) error {
 	msg := newMsgReader(data)
+	var packetSnapshot *snapshotState
 
 	if _, err := msg.readLong(); err != nil {
 		return fmt.Errorf("missing reliable acknowledge: %w", err)
@@ -198,7 +210,7 @@ func (p *parser) parsePacket(sequence int, data []byte) error {
 
 		switch cmd {
 		case svcEOF:
-			return nil
+			return p.finalizePacketSnapshot(packetSnapshot)
 		case svcNop:
 			continue
 		case svcServerCommand:
@@ -210,7 +222,16 @@ func (p *parser) parsePacket(sequence int, data []byte) error {
 				return err
 			}
 		case svcSnapshot:
-			if err := p.parseSnapshot(sequence, msg); err != nil {
+			if err := p.finalizePacketSnapshot(packetSnapshot); err != nil {
+				return err
+			}
+			snapshot, err := p.parseSnapshot(sequence, msg)
+			if err != nil {
+				return err
+			}
+			packetSnapshot = snapshot
+		case svcETTVPlayerstates:
+			if err := p.parseETTVPlayerstates(msg, packetSnapshot); err != nil {
 				return err
 			}
 		case svcDownload:
@@ -219,6 +240,21 @@ func (p *parser) parsePacket(sequence int, data []byte) error {
 			return fmt.Errorf("illegible server message %d", cmd)
 		}
 	}
+}
+
+func (p *parser) finalizePacketSnapshot(snapshot *snapshotState) error {
+	if snapshot == nil || !snapshot.Valid {
+		return nil
+	}
+
+	if p.onSnapshot != nil {
+		if err := p.onSnapshot(p, snapshot); err != nil {
+			return err
+		}
+	}
+	p.emitSnapshotKills(snapshot)
+
+	return nil
 }
 
 func (p *parser) parseServerCommand(msg *msgReader) error {
@@ -240,6 +276,7 @@ func (p *parser) parseServerCommand(msg *msgReader) error {
 
 func (p *parser) parseGamestate(msg *msgReader) error {
 	var empty entityState
+	var emptyShared entitySharedState
 
 	p.flushAllMultiKillWindows()
 	p.resetState()
@@ -283,6 +320,33 @@ func (p *parser) parseGamestate(msg *msgReader) error {
 				return fmt.Errorf("read baseline entity %d: %w", number, err)
 			}
 			p.baselines[number] = state
+			if p.isTVDemo {
+				shared, err := readDeltaEntityShared(msg, &emptyShared)
+				if err != nil {
+					return fmt.Errorf("read shared baseline entity %d: %w", number, err)
+				}
+				p.baselinesShared[number] = shared
+			}
+		case svcETTVCurrentstate:
+			number, err := msg.readBits(gentityNumBits)
+			if err != nil {
+				return fmt.Errorf("read currentstate entity number: %w", err)
+			}
+			if number < 0 || int(number) >= maxGentities {
+				return fmt.Errorf("currentstate entity out of range: %d", number)
+			}
+
+			state, err := readDeltaEntity(msg, &p.baselines[number], int(number))
+			if err != nil {
+				return fmt.Errorf("read currentstate entity %d: %w", number, err)
+			}
+			shared, err := readDeltaEntityShared(msg, &p.baselinesShared[number])
+			if err != nil {
+				return fmt.Errorf("read shared currentstate entity %d: %w", number, err)
+			}
+			shared.Linked = true
+			p.currentStates[number] = state
+			p.currentStatesShared[number] = shared
 		default:
 			return fmt.Errorf("bad gamestate opcode %d", cmd)
 		}
@@ -302,20 +366,20 @@ func (p *parser) parseGamestate(msg *msgReader) error {
 	return nil
 }
 
-func (p *parser) parseSnapshot(sequence int, msg *msgReader) error {
+func (p *parser) parseSnapshot(sequence int, msg *msgReader) (*snapshotState, error) {
 	var snap snapshotState
 	var old *snapshotState
 
 	serverTime, err := msg.readLong()
 	if err != nil {
-		return fmt.Errorf("read snapshot server time: %w", err)
+		return nil, fmt.Errorf("read snapshot server time: %w", err)
 	}
 	snap.ServerTime = serverTime
 	snap.MessageNum = sequence
 
 	deltaByte, err := msg.readByte()
 	if err != nil {
-		return fmt.Errorf("read snapshot delta number: %w", err)
+		return nil, fmt.Errorf("read snapshot delta number: %w", err)
 	}
 	if deltaByte == 0 {
 		snap.DeltaNum = -1
@@ -331,22 +395,22 @@ func (p *parser) parseSnapshot(sequence int, msg *msgReader) error {
 
 	snapFlags, err := msg.readByte()
 	if err != nil {
-		return fmt.Errorf("read snapshot flags: %w", err)
+		return nil, fmt.Errorf("read snapshot flags: %w", err)
 	}
 	snap.SnapFlags = snapFlags
 
 	areaMaskLen, err := msg.readByte()
 	if err != nil {
-		return fmt.Errorf("read areamask length: %w", err)
+		return nil, fmt.Errorf("read areamask length: %w", err)
 	}
 	if areaMaskLen < 0 {
-		return fmt.Errorf("invalid areamask length %d", areaMaskLen)
+		return nil, fmt.Errorf("invalid areamask length %d", areaMaskLen)
 	}
 	snap.AreaMask = make([]byte, areaMaskLen)
 	for i := range snap.AreaMask {
 		value, err := msg.readByte()
 		if err != nil {
-			return fmt.Errorf("read areamask: %w", err)
+			return nil, fmt.Errorf("read areamask: %w", err)
 		}
 		snap.AreaMask[i] = byte(value)
 	}
@@ -357,30 +421,66 @@ func (p *parser) parseSnapshot(sequence int, msg *msgReader) error {
 		snap.PlayerState, err = readDeltaPlayerState(msg, nil)
 	}
 	if err != nil {
-		return fmt.Errorf("read delta playerstate: %w", err)
+		return nil, fmt.Errorf("read delta playerstate: %w", err)
 	}
 
 	if err := p.parsePacketEntities(msg, old, &snap); err != nil {
-		return err
+		return nil, err
 	}
 
 	if !snap.Valid {
-		return nil
+		return nil, nil
 	}
 
 	p.snapshots[snap.MessageNum&packetMask] = snap
-	if p.onSnapshot != nil {
-		if err := p.onSnapshot(p, &snap); err != nil {
-			return err
+	return &p.snapshots[snap.MessageNum&packetMask], nil
+}
+
+func (p *parser) parseETTVPlayerstates(msg *msgReader, snapshot *snapshotState) error {
+	if snapshot == nil {
+		return errors.New("svc_ettv_playerstates without a preceding snapshot")
+	}
+
+	var old *snapshotState
+	if snapshot.DeltaNum != -1 {
+		candidate := &p.snapshots[snapshot.DeltaNum&packetMask]
+		if candidate.Valid && candidate.MessageNum == snapshot.DeltaNum {
+			old = candidate
 		}
 	}
-	p.emitSnapshotKills(&snap)
 
-	return nil
+	for {
+		clientNum, err := msg.readByte()
+		if err != nil {
+			return fmt.Errorf("read ETTV playerstate client number: %w", err)
+		}
+		if clientNum == 255 {
+			return nil
+		}
+		if clientNum < 0 || clientNum >= maxClients {
+			return fmt.Errorf("ETTV playerstate client number out of range: %d", clientNum)
+		}
+
+		var from *playerState
+		if old != nil && old.PlayerStates[clientNum].Valid {
+			from = &old.PlayerStates[clientNum].State
+		}
+
+		state, err := readDeltaPlayerState(msg, from)
+		if err != nil {
+			return fmt.Errorf("read ETTV playerstate for client %d: %w", clientNum, err)
+		}
+
+		snapshot.PlayerStates[clientNum] = ettvPlayerState{
+			Valid: true,
+			State: state,
+		}
+	}
 }
 
 func (p *parser) parsePacketEntities(msg *msgReader, oldFrame *snapshotState, newFrame *snapshotState) error {
 	var oldState *entityState
+	var oldShared *entitySharedState
 
 	oldIndex := 0
 	oldNum := maxGentities
@@ -390,6 +490,7 @@ func (p *parser) parsePacketEntities(msg *msgReader, oldFrame *snapshotState, ne
 
 	if oldFrame != nil && oldIndex < oldFrame.NumEntities {
 		oldState = &p.parseEntities[(oldFrame.ParseEntitiesNum+oldIndex)&(maxParseEntities-1)]
+		oldShared = &p.parseEntitiesShared[(oldFrame.ParseEntitiesNum+oldIndex)&(maxParseEntities-1)]
 		oldNum = oldState.Number
 	}
 
@@ -404,47 +505,53 @@ func (p *parser) parsePacketEntities(msg *msgReader, oldFrame *snapshotState, ne
 		}
 
 		for oldNum < newNum {
-			p.copyEntity(newFrame, oldState)
+			p.copyEntity(newFrame, oldState, oldShared)
 			oldIndex++
 			if oldFrame == nil || oldIndex >= oldFrame.NumEntities {
 				oldNum = maxGentities
 				oldState = nil
+				oldShared = nil
 			} else {
 				oldState = &p.parseEntities[(oldFrame.ParseEntitiesNum+oldIndex)&(maxParseEntities-1)]
+				oldShared = &p.parseEntitiesShared[(oldFrame.ParseEntitiesNum+oldIndex)&(maxParseEntities-1)]
 				oldNum = oldState.Number
 			}
 		}
 
 		if oldNum == newNum {
-			if err := p.deltaEntity(msg, newFrame, newNum, oldState); err != nil {
+			if err := p.deltaEntity(msg, newFrame, newNum, oldState, oldShared); err != nil {
 				return err
 			}
 			oldIndex++
 			if oldFrame == nil || oldIndex >= oldFrame.NumEntities {
 				oldNum = maxGentities
 				oldState = nil
+				oldShared = nil
 			} else {
 				oldState = &p.parseEntities[(oldFrame.ParseEntitiesNum+oldIndex)&(maxParseEntities-1)]
+				oldShared = &p.parseEntitiesShared[(oldFrame.ParseEntitiesNum+oldIndex)&(maxParseEntities-1)]
 				oldNum = oldState.Number
 			}
 			continue
 		}
 
 		if oldNum > newNum {
-			if err := p.deltaEntity(msg, newFrame, newNum, &p.baselines[newNum]); err != nil {
+			if err := p.deltaEntity(msg, newFrame, newNum, &p.baselines[newNum], &p.baselinesShared[newNum]); err != nil {
 				return err
 			}
 		}
 	}
 
 	for oldNum != maxGentities {
-		p.copyEntity(newFrame, oldState)
+		p.copyEntity(newFrame, oldState, oldShared)
 		oldIndex++
 		if oldFrame == nil || oldIndex >= oldFrame.NumEntities {
 			oldNum = maxGentities
 			oldState = nil
+			oldShared = nil
 		} else {
 			oldState = &p.parseEntities[(oldFrame.ParseEntitiesNum+oldIndex)&(maxParseEntities-1)]
+			oldShared = &p.parseEntitiesShared[(oldFrame.ParseEntitiesNum+oldIndex)&(maxParseEntities-1)]
 			oldNum = oldState.Number
 		}
 	}
@@ -452,18 +559,23 @@ func (p *parser) parsePacketEntities(msg *msgReader, oldFrame *snapshotState, ne
 	return nil
 }
 
-func (p *parser) copyEntity(frame *snapshotState, source *entityState) {
+func (p *parser) copyEntity(frame *snapshotState, source *entityState, sourceShared *entitySharedState) {
 	if source == nil {
 		return
 	}
 
 	slot := p.parseEntitiesNum & (maxParseEntities - 1)
 	p.parseEntities[slot] = *source
+	if p.isTVDemo && sourceShared != nil {
+		p.parseEntitiesShared[slot] = *sourceShared
+	} else {
+		p.parseEntitiesShared[slot] = entitySharedState{}
+	}
 	p.parseEntitiesNum++
 	frame.NumEntities++
 }
 
-func (p *parser) deltaEntity(msg *msgReader, frame *snapshotState, number int, old *entityState) error {
+func (p *parser) deltaEntity(msg *msgReader, frame *snapshotState, number int, old *entityState, oldShared *entitySharedState) error {
 	if old == nil {
 		return fmt.Errorf("missing delta source for entity %d", number)
 	}
@@ -472,12 +584,26 @@ func (p *parser) deltaEntity(msg *msgReader, frame *snapshotState, number int, o
 	if err != nil {
 		return fmt.Errorf("read delta entity %d: %w", number, err)
 	}
+
+	var shared entitySharedState
+	if p.isTVDemo {
+		shared, err = readDeltaEntityShared(msg, oldShared)
+		if err != nil {
+			return fmt.Errorf("read shared delta entity %d: %w", number, err)
+		}
+		shared.Linked = true
+	}
 	if state.Number == removedEntityNum {
 		return nil
 	}
 
 	slot := p.parseEntitiesNum & (maxParseEntities - 1)
 	p.parseEntities[slot] = state
+	if p.isTVDemo {
+		p.parseEntitiesShared[slot] = shared
+	} else {
+		p.parseEntitiesShared[slot] = entitySharedState{}
+	}
 	p.parseEntitiesNum++
 	frame.NumEntities++
 
@@ -570,6 +696,105 @@ func readDeltaEntity(msg *msgReader, from *entityState, number int) (entityState
 		value, err := msg.readBits(bits)
 		if err != nil {
 			return entityState{}, err
+		}
+		to.Fields[i] = value
+	}
+
+	return to, nil
+}
+
+func readDeltaEntityShared(msg *msgReader, from *entitySharedState) (entitySharedState, error) {
+	var empty entitySharedState
+	if from == nil {
+		from = &empty
+	}
+
+	to := *from
+
+	magic, err := msg.readBits(8)
+	if err != nil {
+		return entitySharedState{}, err
+	}
+	if magic != entitySharedMagic {
+		return entitySharedState{}, fmt.Errorf("wrong ETTV entityShared magic 0x%x", magic)
+	}
+
+	remove, err := msg.readBits(1)
+	if err != nil {
+		return entitySharedState{}, err
+	}
+	if remove != 0 {
+		return entitySharedState{}, nil
+	}
+
+	noDelta, err := msg.readBits(1)
+	if err != nil {
+		return entitySharedState{}, err
+	}
+	if noDelta == 0 {
+		return to, nil
+	}
+
+	count, err := msg.readByte()
+	if err != nil {
+		return entitySharedState{}, err
+	}
+	if count < 0 || count > entitySharedFieldCount {
+		return entitySharedState{}, fmt.Errorf("invalid entityShared field count %d", count)
+	}
+
+	for i := 0; i < count; i++ {
+		changed, err := msg.readBits(1)
+		if err != nil {
+			return entitySharedState{}, err
+		}
+		if changed == 0 {
+			continue
+		}
+
+		bits := entitySharedFieldBits[i]
+		if bits == 0 {
+			isNonZero, err := msg.readBits(1)
+			if err != nil {
+				return entitySharedState{}, err
+			}
+			if isNonZero == 0 {
+				to.Fields[i] = int32(mathFloat32bits(0))
+				continue
+			}
+
+			isFullFloat, err := msg.readBits(1)
+			if err != nil {
+				return entitySharedState{}, err
+			}
+			if isFullFloat == 0 {
+				trunc, err := msg.readBits(floatIntBits)
+				if err != nil {
+					return entitySharedState{}, err
+				}
+				to.Fields[i] = floatBitsFromInt(trunc - floatIntBias)
+			} else {
+				value, err := msg.readBits(32)
+				if err != nil {
+					return entitySharedState{}, err
+				}
+				to.Fields[i] = value
+			}
+			continue
+		}
+
+		isNonZero, err := msg.readBits(1)
+		if err != nil {
+			return entitySharedState{}, err
+		}
+		if isNonZero == 0 {
+			to.Fields[i] = 0
+			continue
+		}
+
+		value, err := msg.readBits(bits)
+		if err != nil {
+			return entitySharedState{}, err
 		}
 		to.Fields[i] = value
 	}
@@ -1355,6 +1580,10 @@ func formatMatchTimestamp(milliseconds int) string {
 	centiseconds := (milliseconds % 1000) / 10
 
 	return fmt.Sprintf("%02d:%02d.%02d", minutes, seconds, centiseconds)
+}
+
+func isTVDemoPath(path string) bool {
+	return strings.EqualFold(filepath.Ext(path), ".tv_84")
 }
 
 func mathFloat32bits(value float32) uint32 {

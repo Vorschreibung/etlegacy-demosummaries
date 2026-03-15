@@ -26,8 +26,8 @@ func newRootCommand(stdout io.Writer, stderr io.Writer,
 	options := parserOptions{}
 
 	command := &cobra.Command{
-		Use:          "etlegacy-demosummaries [flags] <demo.dm_84> [more demos...]",
-		Short:        "Parse ET .dm_84 demos and print kill lines",
+		Use:          "etlegacy-demosummaries [flags] <demo.dm_84|demo.tv_84> [more demos...]",
+		Short:        "Parse ET .dm_84 and .tv_84 demos and print kill lines",
 		SilenceUsage: true,
 		Args:         cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -77,9 +77,9 @@ func newSplitMultikillCommand(stdout io.Writer, stderr io.Writer) *cobra.Command
 	}
 
 	command := &cobra.Command{
-		Use:          "split-multikill <demo.dm_84> [more demos...]",
+		Use:          "split-multikill <demo.dm_84|demo.tv_84> [more demos...]",
 		Aliases:      []string{"split-multikills"},
-		Short:        "Split demos into multikill clips",
+		Short:        "Split demos and TV demos into multikill clips",
 		SilenceUsage: true,
 		Args:         cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

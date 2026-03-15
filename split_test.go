@@ -75,6 +75,66 @@ func TestSplitMultikillCreatesParseableClip(t *testing.T) {
 	}
 }
 
+func TestSplitMultikillTVCreatesParseableClip(t *testing.T) {
+	tempDir := t.TempDir()
+	demoPath := filepath.Join(tempDir, "demo.tv_84")
+	writeSyntheticDemo(t, demoPath, 1, []syntheticSnapshot{
+		{serverTime: 1000},
+		{serverTime: 5000, entities: []entityState{makeObituaryEntity(200, 1, 2)}},
+		{serverTime: 7000, entities: []entityState{makeObituaryEntity(201, 1, 3)}},
+	})
+
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("change working directory: %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(originalDir); err != nil {
+			t.Fatalf("restore working directory: %v", err)
+		}
+	}()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	command := newRootCommand(&stdout, &stderr, runParser)
+	command.SetArgs([]string{
+		"split-multikill",
+		"--before", "0",
+		"--after", "0",
+		demoPath,
+	})
+
+	if err := command.Execute(); err != nil {
+		t.Fatalf("execute split-multikill on tv demo: %v", err)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("unexpected stderr: %q", stderr.String())
+	}
+
+	clipPath := filepath.Join(tempDir, "demo_00_00_04_killer_2kills.tv_84")
+	if _, err := os.Stat(clipPath); err != nil {
+		t.Fatalf("expected clip %s: %v\nstdout: %s", clipPath, err, stdout.String())
+	}
+	if !strings.Contains(stdout.String(), clipPath) {
+		t.Fatalf("expected stdout to mention %s, got %q", clipPath, stdout.String())
+	}
+
+	var clipOut bytes.Buffer
+	parser := newParser(&clipOut, parserOptions{})
+	if err := parser.parseFile(clipPath); err != nil {
+		t.Fatalf("parse clip %s: %v", clipPath, err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(clipOut.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 kill lines in clip, got %d: %q", len(lines), clipOut.String())
+	}
+}
+
 func TestSplitMultikillsFromMeOnlyCreatesRecorderClips(t *testing.T) {
 	tempDir := t.TempDir()
 	demoPath := filepath.Join(tempDir, "demo.dm_84")
@@ -141,6 +201,7 @@ func writeSyntheticDemo(t *testing.T, path string, recorderClientNum int, snapsh
 	t.Helper()
 
 	parser := newParser(io.Discard, parserOptions{})
+	parser.isTVDemo = isTVDemoPath(path)
 	parser.serverCommandSequence = 1
 	parser.clientNum = recorderClientNum
 	parser.checksumFeed = 0
