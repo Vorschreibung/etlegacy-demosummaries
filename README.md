@@ -4,7 +4,7 @@
 2. Put it in some directory where you want the output log files to be, open a
    Terminal and run the binary with `-h` to see all the options.
 
-Example:
+### Example 1
 ```
 $ ./etlegacy-demosummaries_linux_amd64 --kills-only-from Debugschreibung --multikills-only 3 \
     "/home/vor/.etlegacy/legacy/demos/2025-06/2025-06-13-100235-etl_braundorf.dm_84"
@@ -27,3 +27,13 @@ $ ./etlegacy-demosummaries_linux_amd64 --kills-only-from Debugschreibung --multi
 
 There will now also be a `log-2025-06-13-100235-etl_braundorf.txt` next to where my
 `./etlegacy-demosummaries_linux_amd64` binary is.
+
+### Example 2
+```
+$ ./etlegacy-demosummaries_linux_amd64 split-multikill --from -me /home/vor/workspace/etlegacy-demosummaries/BelPracSupply.dm_84
+
+/home/vor/workspace/etlegacy-demosummaries/BelPracSupply_00_13_18_u_a_ipod_2kills.dm_84
+```
+
+There will now be the listed clips of multikills in the current working
+directory.

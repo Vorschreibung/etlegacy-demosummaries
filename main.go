@@ -26,7 +26,7 @@ func newRootCommand(stdout io.Writer, stderr io.Writer,
 	options := parserOptions{}
 
 	command := &cobra.Command{
-		Use:          "etlegacy-demosummaries <demo.dm_84> [more demos...]",
+		Use:          "etlegacy-demosummaries [flags] <demo.dm_84> [more demos...]",
 		Short:        "Parse ET .dm_84 demos and print kill lines",
 		SilenceUsage: true,
 		Args:         cobra.MinimumNArgs(1),
@@ -63,6 +63,52 @@ func newRootCommand(stdout io.Writer, stderr io.Writer,
 	flags.Lookup("multikill-headshots-only").NoOptDefVal = "2"
 	flags.StringVar(&options.killsOnlyFrom, "kills-only-from", "",
 		"only print kills from the given cleaned player name")
+
+	command.AddCommand(newSplitMultikillCommand(stdout, stderr))
+
+	return command
+}
+
+func newSplitMultikillCommand(stdout io.Writer, stderr io.Writer) *cobra.Command {
+	options := splitOptions{
+		minimum:    2,
+		beforeSecs: 5,
+		afterSecs:  5,
+	}
+
+	command := &cobra.Command{
+		Use:          "split-multikill <demo.dm_84> [more demos...]",
+		Aliases:      []string{"split-multikills"},
+		Short:        "Split demos into multikill clips",
+		SilenceUsage: true,
+		Args:         cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if options.minimum < 2 {
+				return fmt.Errorf("--minimum must be at least 2")
+			}
+			if options.beforeSecs < 0 {
+				return fmt.Errorf("--before must be non-negative")
+			}
+			if options.afterSecs < 0 {
+				return fmt.Errorf("--after must be non-negative")
+			}
+
+			return runSplitMultikill(stdout, stderr, options, args)
+		},
+	}
+
+	command.SetOut(stdout)
+	command.SetErr(stderr)
+
+	flags := command.Flags()
+	flags.IntVar(&options.minimum, "minimum", options.minimum,
+		"minimum kills required inside the 3 second multikill window")
+	flags.IntVar(&options.beforeSecs, "before", options.beforeSecs,
+		"seconds to include before the multikill window")
+	flags.IntVar(&options.afterSecs, "after", options.afterSecs,
+		"seconds to include after the multikill window")
+	flags.BoolVar(&options.fromMe, "from-me", false,
+		"only split multikills done by the client who recorded the demo")
 
 	return command
 }
