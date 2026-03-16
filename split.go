@@ -16,6 +16,7 @@ type splitOptions struct {
 	afterSecs         int
 	fromMe            bool
 	filterKillerDying bool
+	convertToDM84     bool
 }
 
 type detectedMultiKillWindow struct {
@@ -46,12 +47,14 @@ type activeClipWriter struct {
 }
 
 type splitRuntime struct {
-	out         io.Writer
-	demoPath    string
-	outputDir   string
-	windows     []clipWindow
-	nextWindow  int
-	activeClips []*activeClipWriter
+	out             io.Writer
+	demoPath        string
+	outputDir       string
+	outputExtension string
+	outputTVDemo    bool
+	windows         []clipWindow
+	nextWindow      int
+	activeClips     []*activeClipWriter
 }
 
 func runSplitMultikill(out io.Writer, _ io.Writer, options splitOptions, paths []string) error {
@@ -71,7 +74,7 @@ func runSplitMultikill(out io.Writer, _ io.Writer, options splitOptions, paths [
 		}
 
 		clipWindows := makeClipWindows(windows, options.beforeSecs*1000, options.afterSecs*1000)
-		if err := splitDemoIntoClips(out, path, outputDir, clipWindows); err != nil {
+		if err := splitDemoIntoClips(out, path, outputDir, clipWindows, options); err != nil {
 			return err
 		}
 	}
@@ -144,12 +147,21 @@ func makeClipWindows(windows []detectedMultiKillWindow, beforeMs int, afterMs in
 	return clips
 }
 
-func splitDemoIntoClips(out io.Writer, demoPath string, outputDir string, windows []clipWindow) error {
+func splitDemoIntoClips(out io.Writer, demoPath string, outputDir string, windows []clipWindow, options splitOptions) error {
+	outputExtension := filepath.Ext(demoPath)
+	outputTVDemo := isTVDemoPath(demoPath)
+	if options.convertToDM84 && outputTVDemo {
+		outputExtension = ".dm_84"
+		outputTVDemo = false
+	}
+
 	runtime := &splitRuntime{
-		out:       out,
-		demoPath:  demoPath,
-		outputDir: outputDir,
-		windows:   windows,
+		out:             out,
+		demoPath:        demoPath,
+		outputDir:       outputDir,
+		outputExtension: outputExtension,
+		outputTVDemo:    outputTVDemo,
+		windows:         windows,
 	}
 
 	parser := newParser(io.Discard, parserOptions{})
@@ -204,7 +216,7 @@ func (r *splitRuntime) handleSnapshot(parser *parser, snapshot *snapshotState) e
 }
 
 func (r *splitRuntime) startClip(parser *parser, snapshot *snapshotState, window clipWindow) (*activeClipWriter, error) {
-	path, err := buildClipPath(r.outputDir, r.demoPath, window)
+	path, err := buildClipPath(r.outputDir, r.demoPath, r.outputExtension, window)
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +226,7 @@ func (r *splitRuntime) startClip(parser *parser, snapshot *snapshotState, window
 		return nil, fmt.Errorf("create %s: %w", path, err)
 	}
 
-	writer := newDemoFileWriter(file)
+	writer := newDemoFileWriter(file, r.outputTVDemo)
 	if err := writer.writeGamestate(parser); err != nil {
 		_ = file.Close()
 		return nil, fmt.Errorf("write %s gamestate: %w", path, err)
@@ -258,10 +270,13 @@ func (w *activeClipWriter) close() error {
 	return nil
 }
 
-func buildClipPath(outputDir string, demoPath string, window clipWindow) (string, error) {
+func buildClipPath(outputDir string, demoPath string, outputExtension string, window clipWindow) (string, error) {
 	baseName := filepath.Base(demoPath)
 	extension := filepath.Ext(baseName)
 	name := strings.TrimSuffix(baseName, extension)
+	if outputExtension == "" {
+		outputExtension = extension
+	}
 	timestamp := formatClipTimestamp(window.matchTimeMs)
 	killer := sanitizePathComponent(window.killerName)
 	if killer == "" {
@@ -269,7 +284,7 @@ func buildClipPath(outputDir string, demoPath string, window clipWindow) (string
 	}
 
 	basePath := filepath.Join(outputDir, fmt.Sprintf("%s_%s_%s_%dkills%s",
-		name, timestamp, killer, window.killCount, extension))
+		name, timestamp, killer, window.killCount, outputExtension))
 	return nextAvailablePath(basePath)
 }
 

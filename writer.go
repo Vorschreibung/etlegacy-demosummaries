@@ -17,6 +17,7 @@ type msgWriter struct {
 type demoFileWriter struct {
 	writer       io.Writer
 	nextSequence int
+	tvFormat     bool
 }
 
 func newMsgWriter(maxSize int) *msgWriter {
@@ -48,8 +49,11 @@ func buildMessageHuffmanCodes(root *huffNode) [256][]byte {
 	return codes
 }
 
-func newDemoFileWriter(writer io.Writer) *demoFileWriter {
-	return &demoFileWriter{writer: writer}
+func newDemoFileWriter(writer io.Writer, tvFormat bool) *demoFileWriter {
+	return &demoFileWriter{
+		writer:   writer,
+		tvFormat: tvFormat,
+	}
 }
 
 func (w *msgWriter) writeBit(value byte) error {
@@ -587,7 +591,7 @@ func writeDeltaGroupedInt16(msg *msgWriter, mask int, values []int32) error {
 	return nil
 }
 
-func encodeGamestate(p *parser) ([]byte, error) {
+func encodeGamestate(p *parser, tvFormat bool) ([]byte, error) {
 	msg := newMsgWriter(maxMsgLen)
 	if err := msg.writeLong(0); err != nil {
 		return nil, err
@@ -627,14 +631,14 @@ func encodeGamestate(p *parser) ([]byte, error) {
 		if err := writeDeltaEntity(msg, &empty, baseline, true); err != nil {
 			return nil, err
 		}
-		if p.isTVDemo {
+		if tvFormat {
 			if err := writeDeltaEntityShared(msg, &emptyShared, &p.baselinesShared[index], true); err != nil {
 				return nil, err
 			}
 		}
 	}
 
-	if p.isTVDemo {
+	if tvFormat {
 		for index := range p.currentStates {
 			shared := &p.currentStatesShared[index]
 			if !shared.Linked {
@@ -668,7 +672,7 @@ func encodeGamestate(p *parser) ([]byte, error) {
 	return msg.bytes(), nil
 }
 
-func encodeSnapshot(p *parser, snap *snapshotState) ([]byte, error) {
+func encodeSnapshot(p *parser, snap *snapshotState, tvFormat bool) ([]byte, error) {
 	msg := newMsgWriter(maxMsgLen)
 	if err := msg.writeLong(0); err != nil {
 		return nil, err
@@ -700,7 +704,7 @@ func encodeSnapshot(p *parser, snap *snapshotState) ([]byte, error) {
 		if err := writeDeltaEntity(msg, &p.baselines[state.Number], state, true); err != nil {
 			return nil, err
 		}
-		if p.isTVDemo {
+		if tvFormat {
 			shared := &p.parseEntitiesShared[(snap.ParseEntitiesNum+i)&(maxParseEntities-1)]
 			if err := writeDeltaEntityShared(msg, &p.baselinesShared[state.Number], shared, true); err != nil {
 				return nil, err
@@ -710,7 +714,7 @@ func encodeSnapshot(p *parser, snap *snapshotState) ([]byte, error) {
 	if err := msg.writeBits(removedEntityNum, gentityNumBits); err != nil {
 		return nil, err
 	}
-	if p.isTVDemo {
+	if tvFormat {
 		if err := writeETTVPlayerStates(msg, snap); err != nil {
 			return nil, err
 		}
@@ -755,7 +759,7 @@ func hasEntityState(state *entityState) bool {
 }
 
 func (w *demoFileWriter) writeGamestate(p *parser) error {
-	payload, err := encodeGamestate(p)
+	payload, err := encodeGamestate(p, w.tvFormat)
 	if err != nil {
 		return err
 	}
@@ -767,7 +771,7 @@ func (w *demoFileWriter) writeGamestate(p *parser) error {
 }
 
 func (w *demoFileWriter) writeSnapshot(p *parser, snap *snapshotState) error {
-	payload, err := encodeSnapshot(p, snap)
+	payload, err := encodeSnapshot(p, snap, w.tvFormat)
 	if err != nil {
 		return err
 	}

@@ -135,6 +135,63 @@ func TestSplitMultikillTVCreatesParseableClip(t *testing.T) {
 	}
 }
 
+func TestSplitMultikillConvertTVToDM84(t *testing.T) {
+	tempDir := t.TempDir()
+	demoPath := filepath.Join(tempDir, "demo.tv_84")
+	writeSyntheticDemo(t, demoPath, 1, []syntheticSnapshot{
+		{serverTime: 1000},
+		{serverTime: 5000, entities: []entityState{makeObituaryEntity(200, 1, 2)}},
+		{serverTime: 7000, entities: []entityState{makeObituaryEntity(201, 1, 3)}},
+	})
+
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("change working directory: %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(originalDir); err != nil {
+			t.Fatalf("restore working directory: %v", err)
+		}
+	}()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	command := newRootCommand(&stdout, &stderr, runParser)
+	command.SetArgs([]string{
+		"split-multikill",
+		"--convert-to-dm-84",
+		"--before", "0",
+		"--after", "0",
+		demoPath,
+	})
+
+	if err := command.Execute(); err != nil {
+		t.Fatalf("execute split-multikill --convert-to-dm-84: %v", err)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("unexpected stderr: %q", stderr.String())
+	}
+
+	clipPath := filepath.Join(tempDir, "demo_00_00_04_killer_2kills.dm_84")
+	if _, err := os.Stat(clipPath); err != nil {
+		t.Fatalf("expected converted clip %s: %v\nstdout: %s", clipPath, err, stdout.String())
+	}
+	tvClipPath := filepath.Join(tempDir, "demo_00_00_04_killer_2kills.tv_84")
+	if _, err := os.Stat(tvClipPath); !os.IsNotExist(err) {
+		t.Fatalf("expected no .tv_84 clip at %s, stat err: %v", tvClipPath, err)
+	}
+
+	var clipOut bytes.Buffer
+	parser := newParser(&clipOut, parserOptions{})
+	if err := parser.parseFile(clipPath); err != nil {
+		t.Fatalf("parse converted clip %s: %v", clipPath, err)
+	}
+}
+
 func TestSplitMultikillWindowFlagControlsGrouping(t *testing.T) {
 	tempDir := t.TempDir()
 	demoPath := filepath.Join(tempDir, "demo.dm_84")
@@ -384,7 +441,7 @@ func writeSyntheticDemo(t *testing.T, path string, recorderClientNum int, snapsh
 		t.Fatalf("create %s: %v", path, err)
 	}
 
-	writer := newDemoFileWriter(file)
+	writer := newDemoFileWriter(file, parser.isTVDemo)
 	if err := writer.writeGamestate(parser); err != nil {
 		_ = file.Close()
 		t.Fatalf("write gamestate: %v", err)

@@ -143,6 +143,8 @@ func newSplitMultikillCommand(stdout io.Writer, stderr io.Writer) *cobra.Command
 		"only split multikills done by the client who recorded the demo")
 	flags.BoolVar(&options.filterKillerDying, "filter-killer-dying", false,
 		"skip clips where the killer dies during the multikill itself")
+	flags.BoolVar(&options.convertToDM84, "convert-to-dm-84", false,
+		"when splitting .tv_84 demos, write the output clips as .dm_84 files")
 
 	return command
 }
