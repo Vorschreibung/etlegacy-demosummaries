@@ -141,6 +141,8 @@ func newSplitMultikillCommand(stdout io.Writer, stderr io.Writer) *cobra.Command
 		"seconds to include after the multikill window")
 	flags.BoolVar(&options.fromMe, "from-me", false,
 		"only split multikills done by the client who recorded the demo")
+	flags.BoolVar(&options.filterKillerDying, "filter-killer-dying", false,
+		"skip clips where the killer dies during the multikill itself")
 
 	return command
 }

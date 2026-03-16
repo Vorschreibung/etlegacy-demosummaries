@@ -10,11 +10,12 @@ import (
 )
 
 type splitOptions struct {
-	minimum         int
-	multiKillWindow int
-	beforeSecs      int
-	afterSecs       int
-	fromMe          bool
+	minimum           int
+	multiKillWindow   int
+	beforeSecs        int
+	afterSecs         int
+	fromMe            bool
+	filterKillerDying bool
 }
 
 type detectedMultiKillWindow struct {
@@ -91,6 +92,9 @@ func collectMultiKillWindows(path string, options splitOptions) ([]detectedMulti
 		first := window.outputs[0]
 		last := window.outputs[len(window.outputs)-1]
 		if options.fromMe && first.attackerNum != parser.clientNum {
+			return
+		}
+		if options.filterKillerDying && parser.playerDiedBetween(first.attackerNum, first.serverTime, last.serverTime) {
 			return
 		}
 		windows = append(windows, detectedMultiKillWindow{

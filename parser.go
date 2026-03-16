@@ -60,6 +60,11 @@ type multiKillWindow struct {
 	outputs []killOutput
 }
 
+type deathEvent struct {
+	serverTime int
+	targetNum  int
+}
+
 type windowEntry struct {
 	attacker int
 	window   *multiKillWindow
@@ -99,6 +104,7 @@ type parser struct {
 	activeTempEntityNumbers    []int
 	presentTempEntityStamp     [maxGentities]uint32
 	presentTempEntityGen       uint32
+	observedDeaths             []deathEvent
 	pendingKills               [maxClients]multiKillWindow
 	pendingKillActive          [maxClients]bool
 	multiKillWindowSortScratch []windowEntry
@@ -144,6 +150,7 @@ func (p *parser) resetState() {
 	p.activeTempEntityNumbers = p.activeTempEntityNumbers[:0]
 	p.presentTempEntityStamp = [maxGentities]uint32{}
 	p.presentTempEntityGen = 0
+	p.observedDeaths = p.observedDeaths[:0]
 	p.pendingKills = [maxClients]multiKillWindow{}
 	p.pendingKillActive = [maxClients]bool{}
 	p.multiKillWindowSortScratch = p.multiKillWindowSortScratch[:0]
@@ -1059,6 +1066,10 @@ func (p *parser) emitKill(serverTime int, state *entityState) {
 	if target < 0 || target >= maxClients {
 		return
 	}
+	p.observedDeaths = append(p.observedDeaths, deathEvent{
+		serverTime: serverTime,
+		targetNum:  target,
+	})
 
 	attacker := int(state.Fields[fieldOtherEntityNum2])
 	timestamp := formatMatchTimestamp(serverTime - p.levelStartTime)
@@ -1240,6 +1251,20 @@ func (p *parser) emitMultiKillWindow(window multiKillWindow) {
 	}
 
 	p.printedMultiKillWindow = true
+}
+
+func (p *parser) playerDiedBetween(playerNum int, startTime int, endTime int) bool {
+	for _, death := range p.observedDeaths {
+		if death.targetNum != playerNum {
+			continue
+		}
+		if death.serverTime < startTime || death.serverTime > endTime {
+			continue
+		}
+		return true
+	}
+
+	return false
 }
 
 func obituaryWeaponName(weapon int) string {
