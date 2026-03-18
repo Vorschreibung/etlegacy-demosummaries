@@ -259,6 +259,69 @@ func TestSplitMultikillWindowFlagControlsGrouping(t *testing.T) {
 	}
 }
 
+func TestSplitMultikillHeadshotMinimumFiltersWindows(t *testing.T) {
+	tempDir := t.TempDir()
+	demoPath := filepath.Join(tempDir, "demo.dm_84")
+	writeSyntheticDemo(t, demoPath, 1, []syntheticSnapshot{
+		{serverTime: 1000},
+		{serverTime: 5000, entities: []entityState{makeHeadshotObituaryEntity(200, 1, 2)}},
+		{serverTime: 7000, entities: []entityState{makeObituaryEntity(201, 1, 3)}},
+		{serverTime: 9000, entities: []entityState{makeObituaryEntity(202, 1, 5)}},
+		{serverTime: 14000, entities: []entityState{makeHeadshotObituaryEntity(203, 1, 2)}},
+		{serverTime: 16000, entities: []entityState{makeObituaryEntity(204, 1, 3)}},
+		{serverTime: 18000, entities: []entityState{makeHeadshotObituaryEntity(205, 1, 5)}},
+	})
+
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("change working directory: %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(originalDir); err != nil {
+			t.Fatalf("restore working directory: %v", err)
+		}
+	}()
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	command := newRootCommand(&stdout, &stderr, runParser)
+	command.SetArgs([]string{
+		"split-multikill",
+		"--minimum", "3",
+		"--headshot-minimum", "2",
+		"--before", "0",
+		"--after", "0",
+		demoPath,
+	})
+
+	if err := command.Execute(); err != nil {
+		t.Fatalf("execute split-multikill --headshot-minimum: %v", err)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("unexpected stderr: %q", stderr.String())
+	}
+
+	filteredClip := filepath.Join(tempDir, "demo_00_00_04_killer_3kills.dm_84")
+	if _, err := os.Stat(filteredClip); !os.IsNotExist(err) {
+		t.Fatalf("expected no filtered clip at %s, stat err: %v", filteredClip, err)
+	}
+
+	clipPath := filepath.Join(tempDir, "demo_00_00_13_killer_3kills.dm_84")
+	if _, err := os.Stat(clipPath); err != nil {
+		t.Fatalf("expected clip %s: %v\nstdout: %s", clipPath, err, stdout.String())
+	}
+	if !strings.Contains(stdout.String(), clipPath) {
+		t.Fatalf("expected stdout to mention %s, got %q", clipPath, stdout.String())
+	}
+	if strings.Contains(stdout.String(), filteredClip) {
+		t.Fatalf("stdout should not mention filtered clip: %q", stdout.String())
+	}
+}
+
 func TestSplitMultikillFilterKillerDyingRemovesClip(t *testing.T) {
 	tempDir := t.TempDir()
 	demoPath := filepath.Join(tempDir, "demo.dm_84")
@@ -479,6 +542,14 @@ func writeSyntheticDemo(t *testing.T, path string, recorderClientNum int, snapsh
 }
 
 func makeObituaryEntity(number int, attacker int, target int) entityState {
+	return makeObituaryEntityWithHeadshot(number, attacker, target, false)
+}
+
+func makeHeadshotObituaryEntity(number int, attacker int, target int) entityState {
+	return makeObituaryEntityWithHeadshot(number, attacker, target, true)
+}
+
+func makeObituaryEntityWithHeadshot(number int, attacker int, target int, headshot bool) entityState {
 	var state entityState
 
 	state.Number = number
@@ -486,6 +557,9 @@ func makeObituaryEntity(number int, attacker int, target int) entityState {
 	state.Fields[fieldOtherEntityNum] = int32(target)
 	state.Fields[fieldOtherEntityNum2] = int32(attacker)
 	state.Fields[fieldWeapon] = weaponMP40
+	if headshot {
+		state.Fields[fieldLoopSound] = 1
+	}
 
 	return state
 }

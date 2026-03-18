@@ -157,6 +157,47 @@ func TestRootCommandMultiKillHeadshotsOnlyDefaultValue(t *testing.T) {
 	}
 }
 
+func TestRootCommandHeadshotMinimumExplicitValue(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	var gotOptions parserOptions
+
+	command := newRootCommand(&stdout, &stderr,
+		func(_ io.Writer, _ io.Writer, options parserOptions, _ []string) error {
+			gotOptions = options
+			return nil
+		})
+	command.SetArgs(normalizeOptionalIntFlags([]string{
+		"--multikills-only", "3",
+		"--headshot-minimum", "2",
+		"demo.dm_84",
+	}))
+
+	if err := command.Execute(); err != nil {
+		t.Fatalf("execute failed: %v", err)
+	}
+	if gotOptions.headshotMinimum != 2 {
+		t.Fatalf("expected headshot minimum 2, got %d", gotOptions.headshotMinimum)
+	}
+}
+
+func TestRootCommandRejectsHeadshotMinimumWithoutMultiKillMode(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	command := newRootCommand(&stdout, &stderr,
+		func(_ io.Writer, _ io.Writer, _ parserOptions, _ []string) error {
+			t.Fatal("run callback should not be called")
+			return nil
+		})
+	command.SetArgs(normalizeOptionalIntFlags([]string{"--headshot-minimum", "2", "demo.dm_84"}))
+
+	if err := command.Execute(); err == nil {
+		t.Fatal("expected validation error for --headshot-minimum without multikill mode")
+	}
+}
+
 func TestRootCommandRejectsConflictingMultiKillModes(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -170,6 +211,18 @@ func TestRootCommandRejectsConflictingMultiKillModes(t *testing.T) {
 
 	if err := command.Execute(); err == nil {
 		t.Fatal("expected validation error for conflicting multikill modes")
+	}
+}
+
+func TestSplitMultikillCommandRejectsTooSmallHeadshotMinimum(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	command := newRootCommand(&stdout, &stderr, runParser)
+	command.SetArgs([]string{"split-multikill", "--headshot-minimum", "-1", "demo.dm_84"})
+
+	if err := command.Execute(); err == nil {
+		t.Fatal("expected validation error for split-multikill --headshot-minimum=-1")
 	}
 }
 

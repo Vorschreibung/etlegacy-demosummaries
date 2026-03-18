@@ -11,6 +11,7 @@ import (
 
 type splitOptions struct {
 	minimum           int
+	headshotMinimum   int
 	multiKillWindow   int
 	beforeSecs        int
 	afterSecs         int
@@ -86,6 +87,7 @@ func collectMultiKillWindows(path string, options splitOptions) ([]detectedMulti
 	windows := make([]detectedMultiKillWindow, 0, 8)
 	parser := newParser(io.Discard, parserOptions{
 		multiKillMin:    options.minimum,
+		headshotMinimum: options.headshotMinimum,
 		multiKillWindow: options.multiKillWindow,
 	})
 	parser.onMultiKillWindow = func(window multiKillWindow) {

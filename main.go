@@ -58,11 +58,17 @@ func newRootCommand(stdout io.Writer, stderr io.Writer,
 			if options.multiKillHeadshotMin != 0 && options.multiKillHeadshotMin < 2 {
 				return fmt.Errorf("--multikill-headshots-only must be at least 2 when set")
 			}
+			if options.headshotMinimum != 0 && options.headshotMinimum < 1 {
+				return fmt.Errorf("--headshot-minimum must be at least 1 when set")
+			}
 			if options.multiKillWindow < 1 {
 				return fmt.Errorf("--multikill-window must be at least 1")
 			}
 			if options.multiKillMin != 0 && options.multiKillHeadshotMin != 0 {
 				return fmt.Errorf("--multikills-only and --multikill-headshots-only are mutually exclusive")
+			}
+			if options.headshotMinimum != 0 && !options.multiKillEnabled() {
+				return fmt.Errorf("--headshot-minimum requires --multikills-only or --multikill-headshots-only")
 			}
 			if options.killsOnlyFrom != "" {
 				options.killsOnlyFrom = cleanName(options.killsOnlyFrom)
@@ -85,6 +91,8 @@ func newRootCommand(stdout io.Writer, stderr io.Writer,
 	flags.IntVar(&options.multiKillHeadshotMin, "multikill-headshots-only", 0,
 		"only print multikill windows made of headshot kills; when used without a value, require at least 2 kills per window")
 	flags.Lookup("multikill-headshots-only").NoOptDefVal = "2"
+	flags.IntVar(&options.headshotMinimum, "headshot-minimum", 0,
+		"require at least this many headshot kills inside each printed multikill window")
 	flags.IntVar(&options.multiKillWindow, "multikill-window", options.multiKillWindow,
 		"seconds allowed between kills for them to count as the same multikill window")
 	flags.StringVar(&options.killsOnlyFrom, "kills-only-from", "",
@@ -113,6 +121,9 @@ func newSplitMultikillCommand(stdout io.Writer, stderr io.Writer) *cobra.Command
 			if options.minimum < 2 {
 				return fmt.Errorf("--minimum must be at least 2")
 			}
+			if options.headshotMinimum != 0 && options.headshotMinimum < 1 {
+				return fmt.Errorf("--headshot-minimum must be at least 1 when set")
+			}
 			if options.multiKillWindow < 1 {
 				return fmt.Errorf("--multikill-window must be at least 1")
 			}
@@ -133,6 +144,8 @@ func newSplitMultikillCommand(stdout io.Writer, stderr io.Writer) *cobra.Command
 	flags := command.Flags()
 	flags.IntVar(&options.minimum, "minimum", options.minimum,
 		"minimum kills required inside the multikill window")
+	flags.IntVar(&options.headshotMinimum, "headshot-minimum", 0,
+		"require at least this many headshot kills inside each split multikill window")
 	flags.IntVar(&options.multiKillWindow, "multikill-window", options.multiKillWindow,
 		"seconds allowed between kills for them to count as the same multikill window")
 	flags.IntVar(&options.beforeSecs, "before", options.beforeSecs,

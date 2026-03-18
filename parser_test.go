@@ -238,6 +238,81 @@ func TestEmitKillMultiKillWindowConfigurable(t *testing.T) {
 	}
 }
 
+func TestEmitKillMultiKillHeadshotMinimumFiltersWindows(t *testing.T) {
+	var out bytes.Buffer
+
+	parser := newParser(&out, parserOptions{multiKillMin: 3, headshotMinimum: 2})
+	parser.levelStartTime = 1000
+	parser.players[1] = playerInfo{Name: "Killer", Team: teamAxis}
+	parser.players[2] = playerInfo{Name: "VictimA", Team: teamAllies}
+	parser.players[3] = playerInfo{Name: "VictimB", Team: teamAllies}
+	parser.players[4] = playerInfo{Name: "VictimC", Team: teamAllies}
+	parser.players[5] = playerInfo{Name: "VictimD", Team: teamAllies}
+	parser.players[6] = playerInfo{Name: "VictimE", Team: teamAllies}
+	parser.players[7] = playerInfo{Name: "VictimF", Team: teamAllies}
+
+	parser.emitKill(2000, &entityState{
+		Fields: [entityFieldCount]int32{
+			fieldOtherEntityNum:  2,
+			fieldOtherEntityNum2: 1,
+			fieldLoopSound:       1,
+			fieldWeapon:          weaponMP40,
+		},
+	})
+	parser.emitKill(3200, &entityState{
+		Fields: [entityFieldCount]int32{
+			fieldOtherEntityNum:  3,
+			fieldOtherEntityNum2: 1,
+			fieldWeapon:          weaponMP40,
+		},
+	})
+	parser.emitKill(5000, &entityState{
+		Fields: [entityFieldCount]int32{
+			fieldOtherEntityNum:  4,
+			fieldOtherEntityNum2: 1,
+			fieldWeapon:          weaponMP40,
+		},
+	})
+	parser.emitKill(9000, &entityState{
+		Fields: [entityFieldCount]int32{
+			fieldOtherEntityNum:  5,
+			fieldOtherEntityNum2: 1,
+			fieldLoopSound:       1,
+			fieldWeapon:          weaponMP40,
+		},
+	})
+	parser.emitKill(11000, &entityState{
+		Fields: [entityFieldCount]int32{
+			fieldOtherEntityNum:  6,
+			fieldOtherEntityNum2: 1,
+			fieldWeapon:          weaponMP40,
+		},
+	})
+	parser.emitKill(12800, &entityState{
+		Fields: [entityFieldCount]int32{
+			fieldOtherEntityNum:  7,
+			fieldOtherEntityNum2: 1,
+			fieldLoopSound:       1,
+			fieldWeapon:          weaponMP40,
+		},
+	})
+	parser.flushAllMultiKillWindows()
+
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected only the 2-headshot window to print, got %d lines: %q", len(lines), out.String())
+	}
+	if lines[0] != expectedKillLine("00:08.00", true, "Killer", "MP40", "VictimD", "Enemy") {
+		t.Fatalf("unexpected first printed line: %q", lines[0])
+	}
+	if lines[1] != expectedKillLine("00:10.00", false, "Killer", "MP40", "VictimE", "Enemy") {
+		t.Fatalf("unexpected second printed line: %q", lines[1])
+	}
+	if lines[2] != expectedKillLine("00:11.80", true, "Killer", "MP40", "VictimF", "Enemy") {
+		t.Fatalf("unexpected third printed line: %q", lines[2])
+	}
+}
+
 func TestEmitKillSelfMultiKillClassification(t *testing.T) {
 	var out bytes.Buffer
 

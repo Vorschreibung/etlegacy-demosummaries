@@ -16,6 +16,7 @@ import (
 type parserOptions struct {
 	multiKillMin         int
 	multiKillHeadshotMin int
+	headshotMinimum      int
 	multiKillWindow      int
 	killsOnlyFrom        string
 }
@@ -47,6 +48,7 @@ type killOutput struct {
 	matchTimeMs  int
 	attackerNum  int
 	attackerName string
+	headshot     bool
 	line         string
 }
 
@@ -58,6 +60,16 @@ const (
 
 type multiKillWindow struct {
 	outputs []killOutput
+}
+
+func (w multiKillWindow) headshotCount() int {
+	count := 0
+	for _, output := range w.outputs {
+		if output.headshot {
+			count++
+		}
+	}
+	return count
 }
 
 type deathEvent struct {
@@ -1104,6 +1116,7 @@ func (p *parser) emitKill(serverTime int, state *entityState) {
 		matchTimeMs:  serverTime - p.levelStartTime,
 		attackerNum:  attacker,
 		attackerName: attackerName,
+		headshot:     headshot,
 		line: fmt.Sprintf("%s ; %s ; %s ; %s ; %s ; %s",
 			timestamp,
 			obituaryKillLabel(headshot),
@@ -1235,6 +1248,9 @@ func (p *parser) flushAllMultiKillWindows() {
 
 func (p *parser) emitMultiKillWindow(window multiKillWindow) {
 	if len(window.outputs) < p.options.multiKillThreshold() {
+		return
+	}
+	if window.headshotCount() < p.options.headshotMinimum {
 		return
 	}
 
